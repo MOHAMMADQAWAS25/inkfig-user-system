@@ -90,6 +90,11 @@ jobs:
               env_file.write(f"DEPLOY_PARAMETERS_FILE={path}\n")
           PY
 
+      - name: Run database migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m migrations.run
+
       - name: Deploy user backend
         run: |
           sam deploy \
