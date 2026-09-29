@@ -852,3 +852,70 @@ Create the first-visit signup flow with required university email, full name, ph
 ### Notes
 
 Supabase email confirmation is currently set to confirmed at backend account creation because this ticket validates organization format but does not introduce an email-verification workflow. Rate limiting and login remain follow-up authentication work.
+
+## 2026-09-30 - Require ten-digit signup phone numbers
+
+### Request
+
+Confirm the Hebron University email validation and require signup phone numbers to contain exactly 10 digits.
+
+### Changes
+
+- Confirmed the backend continues to accept only eight-digit `@students.hebron.edu` addresses and valid non-empty `@hebron.edu` addresses.
+- Changed authoritative phone validation from a variable international length to exactly 10 numeric digits.
+- Continued normalizing spaces and hyphens before validation and persistence; plus-prefixed/international-length values are rejected.
+- Added focused rejection coverage for 9-digit, 11-digit, plus-prefixed, and alphanumeric phone values.
+- Intentionally left all other signup fields, Supabase Auth creation, profile persistence, compensation, and account status unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: tightened the backend registration contract and tests.
+- `inkfig-user-FE`: mirrored the exact 10-digit rule in the signup experience.
+- `inkfig-main-system`: no changes required.
+
+### Files
+
+- `src/entities/dto/registration.py`: requires exactly 10 normalized digits.
+- `tests/test_registration.py`: updates the valid fixture and adds invalid-length/content cases.
+- `README.md`: documents the authoritative phone requirement.
+
+### API
+
+- `POST /api/v1/auth/signup`: `phone_number` must normalize to exactly 10 digits; invalid values return `422`. Request and response field names are unchanged.
+
+### Database
+
+No migration required. The existing `phone_number` column already stores the normalized value and is large enough for 10 digits.
+
+### Permissions and scope
+
+- Signup remains public and grants no role or permission.
+- Hebron organization and phone validation remain backend-enforced.
+- No account, company, role, permission, or data-scope behavior changed.
+
+### Frontend
+
+- The frontend mirrors the rule for immediate feedback; backend validation remains authoritative.
+
+### Verification
+
+- `[passed] py -3.12 -m pytest` - 23 tests passed.
+- `[passed] py -3.12 -m mypy src tests` - no issues in 44 source files.
+- `[passed] py -3.12 -m compileall -q src tests migrations`
+- `[passed] git diff --check`
+
+### Deployment
+
+- Push to `main` triggers the existing user-backend AWS deployment workflow.
+- No migration, environment-variable, or configuration change is required.
+- Deploy the user backend before the frontend so the authoritative API rule is active first.
+
+### Git
+
+- Branch: `main`
+- Commit: this ticket's focused commit
+- Push: `successful`
+
+### Notes
+
+Phone validation checks digit count only; country/carrier ownership verification is outside this ticket.

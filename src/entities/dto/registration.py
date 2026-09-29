@@ -11,7 +11,7 @@ STUDENT_EMAIL_PATTERN = re.compile(r"^\d{8}@students\.hebron\.edu$")
 STAFF_EMAIL_PATTERN = re.compile(
     r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@hebron\.edu$"
 )
-PHONE_PATTERN = re.compile(r"^\+?[0-9]{7,15}$")
+PHONE_PATTERN = re.compile(r"^[0-9]{10}$")
 
 
 class RegisterUserRequest(BaseModel):
@@ -42,7 +42,7 @@ class RegisterUserRequest(BaseModel):
     def validate_phone_number(cls, value: str) -> str:
         normalized = value.strip().replace(" ", "").replace("-", "")
         if not PHONE_PATTERN.fullmatch(normalized):
-            raise ValueError("Phone number must contain 7 to 15 digits and may start with +.")
+            raise ValueError("Phone number must contain exactly 10 digits.")
         return normalized
 
     @field_validator("full_name")

@@ -17,7 +17,7 @@ def registration_request(**overrides: object) -> RegisterUserRequest:
     values: dict[str, object] = {
         "email": "12345678@students.hebron.edu",
         "full_name": "Student Name",
-        "phone_number": "+970599123456",
+        "phone_number": "0599123456",
         "gender": "female",
         "date_of_birth": "2002-05-17",
         "password": "correct-password",
@@ -47,6 +47,17 @@ def test_registration_rejects_non_hebron_email_formats(email: str) -> None:
 def test_registration_requires_matching_passwords() -> None:
     with pytest.raises(ValidationError):
         registration_request(password_confirmation="different-password")
+
+
+@pytest.mark.parametrize(
+    "phone_number",
+    ["059912345", "05991234567", "+970599123456", "05991abc56"],
+)
+def test_registration_rejects_phone_numbers_without_exactly_ten_digits(
+    phone_number: str,
+) -> None:
+    with pytest.raises(ValidationError):
+        registration_request(phone_number=phone_number)
 
 
 @pytest.mark.parametrize(

@@ -54,7 +54,8 @@ The health endpoint is available at `/health` and `/api/v1/health`.
 `public.user_profiles` record. Every field is required: email, full name, phone
 number, gender, date of birth, password, and password confirmation. The backend
 accepts only `8digits@students.hebron.edu` student addresses or addresses ending
-in `@hebron.edu`; client-side checks are convenience only.
+in `@hebron.edu`, and phone numbers must contain exactly 10 digits; client-side
+checks are convenience only.
 
 Run pending database migrations with:
 
