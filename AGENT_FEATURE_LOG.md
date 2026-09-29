@@ -650,3 +650,65 @@ No deployment changes or special steps.
 ### Notes
 
 This entry records understanding only; it does not claim that planned identity capabilities are already implemented.
+## 2026-09-29 - Preserve JSON configuration in automated SAM deployment
+
+### Request
+
+Fix the backend deployment workflow's handling of structured CORS configuration after the same workflow pattern caused a production startup failure in the main service.
+
+### Changes
+
+- Replaced shell-expanded SAM overrides with an ephemeral structured JSON parameter file generated on the GitHub runner.
+- Preserved the exact production CORS JSON and passed Supabase, database, and certificate secrets without printing them.
+- Applied the correction to both backend workflows so the user service cannot receive the malformed `CORS_ORIGINS` value observed in the main service.
+- Left application behavior, API contracts, authorization, and database schema unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: corrected automated SAM parameter handling.
+- `inkfig-main-system`: corrected the workflow responsible for the observed production 500.
+
+### Files
+
+- `.github/workflows/deploy.yml`: generates and supplies a structured SAM deployment-parameter file.
+- `AGENT_FEATURE_LOG.md`: recorded this ticket.
+
+### API
+
+No API changes.
+
+### Database
+
+No migration required.
+
+### Permissions and scope
+
+- GitHub OIDC and AWS IAM permissions remain unchanged.
+- No application permissions, roles, or authorization scopes changed.
+
+### Frontend
+
+No frontend changes.
+
+### Verification
+
+- `[passed] Python YAML parse of .github/workflows/deploy.yml`
+- `[passed] py -m pytest` — 4 tests passed.
+- `[passed] py -m mypy src tests` — no issues in 30 source files.
+- `[passed] git diff --check -- .github/workflows/deploy.yml`
+- `[not run] corrected GitHub Actions deployment` — triggered by pushing this fix and verified after the push.
+
+### Deployment
+
+- Pushing this correction triggers deployment of the `inkfig-user-system` stack and its production health check.
+- No environment-secret changes or database migrations are required.
+
+### Git
+
+- Branch: `main`
+- Commit: `39b7542`
+- Push: `successful`
+
+### Notes
+
+The structured parameter file prevents SAM's command-line parser from truncating JSON values containing quotation marks.
