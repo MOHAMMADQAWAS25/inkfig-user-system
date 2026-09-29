@@ -771,3 +771,84 @@ No frontend changes.
 ### Notes
 
 The parameter document remains structured and ephemeral; only its extension changed for SAM CLI compatibility.
+
+## 2026-09-30 - Add Hebron University account registration
+
+### Request
+
+Create the first-visit signup flow with required university email, full name, phone number, gender, date of birth, password, and password confirmation fields, with authoritative backend validation and database persistence.
+
+### Changes
+
+- Added a clean-architecture registration workflow that creates an active Supabase Auth user and its application profile.
+- Enforced backend-only organization rules: exactly eight digits before `@students.hebron.edu`, or a non-empty valid local part before `@hebron.edu`.
+- Required every field, normalized email/phone/full name, required a past birth date, restricted gender to `male` or `female`, required an 8-128 character password, and required matching confirmation.
+- Added compensation that deletes the newly created Auth user when profile persistence fails.
+- Kept network and database initialization lazy and request-scoped for future Lambda SnapStart compatibility.
+- Intentionally left login, email verification, roles, permissions, and the main business service unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: added registration API, Supabase Auth integration, profile persistence, migration runner, migration, tests, and deployment migration step.
+- `inkfig-user-FE`: added the matching first-visit and signup experience in its own repository.
+
+### Files
+
+- `src/entities/dto/registration.py`: defines and validates registration contracts.
+- `src/app/services/registration_service.py`: coordinates Auth and profile creation with compensation.
+- `src/infrastructure/integrations/supabase_auth.py`: creates and deletes Supabase Auth users with the backend secret.
+- `src/infrastructure/db/postgres/models/user_profile.py`: maps persisted user profiles.
+- `src/infrastructure/repositories/user_profile_repository.py`: persists profile records transactionally.
+- `src/interface/api/routes/registration.py`: exposes the public signup endpoint and error mapping.
+- `migrations/20260930_001_create_user_profiles.sql`: creates and protects the profile table.
+- `migrations/run.py`: applies timestamped SQL migrations once.
+- `.github/workflows/deploy.yml`: runs database migrations before Lambda deployment.
+- `tests/test_registration.py`: covers email formats, required fields, password matching, successful registration, and compensation.
+
+### API
+
+- `POST /api/v1/auth/signup`: accepts required `email`, `full_name`, `phone_number`, `gender`, `date_of_birth`, `password`, and `password_confirmation`; returns `201` with the non-secret user profile, `409` for an existing email, `422` for validation failures, and `503` when Supabase Auth is unavailable.
+- Passwords and password confirmation are never persisted in `user_profiles` or returned.
+
+### Database
+
+- Migration: `20260930_001_create_user_profiles.sql`
+- Creates `public.user_profiles` keyed to `auth.users(id)` with `ON DELETE CASCADE`, required profile columns, active default, timestamps, gender/birth-date/university-email constraints, a case-insensitive unique email index, and an active-account index.
+- Enables RLS, removes direct `anon` and `authenticated` table access, and grants service-role access; the backend PostgreSQL connection performs registration writes.
+- The migration is additive and idempotently tracked in `public.schema_migrations`; rollback requires dropping `user_profiles` only after preserving profile data and considering Auth-user dependencies.
+
+### Permissions and scope
+
+- Signup is public and requires no existing role or permission.
+- Only Hebron University student/staff email formats are accepted.
+- Profile storage is inaccessible directly to anonymous/authenticated database roles; validation and creation are backend-controlled.
+
+### Frontend
+
+- The corresponding frontend ticket adds welcome and signup routes, required fields, localized feedback, loading/success/error states, and responsive RTL/LTR styling.
+
+### Verification
+
+- `[passed] py -3.12 -m pytest` - 19 tests passed.
+- `[passed] py -3.12 -m mypy src tests` - no issues in 44 source files.
+- `[passed] py -3.12 -m compileall -q src tests migrations`
+- `[passed] sam validate --lint`
+- `[passed] sam build`
+- `[passed] git diff --check`
+- `[not run] live signup against production Supabase` - migration and deployment are intentionally performed by the protected main-branch workflow after merge.
+
+### Deployment
+
+- Deploy `inkfig-user-system`; the workflow applies the database migration before SAM deployment.
+- The existing `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, and Session Pooler `DATABASE_URL` secrets are required; no new environment variables are needed.
+- Deploy the frontend after or with the backend so the signup API exists when the form becomes public.
+
+### Git
+
+- Branch: `feature/user-signup`
+- Commit: `c3ab400`
+- Push: `successful`
+
+### Notes
+
+Supabase email confirmation is currently set to confirmed at backend account creation because this ticket validates organization format but does not introduce an email-verification workflow. Rate limiting and login remain follow-up authentication work.
