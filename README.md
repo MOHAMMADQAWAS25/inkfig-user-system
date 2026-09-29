@@ -48,6 +48,22 @@ uvicorn src.main:app --reload
 
 The health endpoint is available at `/health` and `/api/v1/health`.
 
+## Account registration
+
+`POST /api/v1/auth/signup` creates an active Supabase Auth user and the matching
+`public.user_profiles` record. Every field is required: email, full name, phone
+number, gender, date of birth, password, and password confirmation. The backend
+accepts only `8digits@students.hebron.edu` student addresses or addresses ending
+in `@hebron.edu`; client-side checks are convenience only.
+
+Run pending database migrations with:
+
+```powershell
+py -m migrations.run
+```
+
+Automated production deployment runs migrations before updating Lambda.
+
 ## AWS Lambda deployment
 
 AWS SAM packages the FastAPI application through Mangum using [`template.yaml`](template.yaml). Validate and deploy with:
