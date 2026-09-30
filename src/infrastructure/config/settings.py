@@ -8,9 +8,11 @@ class Settings(BaseSettings):
     environment: str = "local"
     api_prefix: str = "/api/v1"
     cors_origins: list[str] = ["http://localhost:5173"]
-    supabase_url: str = ""
-    supabase_secret_key: str = ""
     database_url: str = ""
+    jwt_secret: str = ""
+    jwt_issuer: str = "inkfig-user-system"
+    access_token_minutes: int = 15
+    refresh_token_days: int = 30
     brevo_api_key: str = ""
     brevo_sender_email: str = ""
     brevo_sender_name: str = "InkFig"

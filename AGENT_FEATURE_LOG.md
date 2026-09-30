@@ -1139,3 +1139,95 @@ No frontend changes. The existing successful-signup path continues to the verifi
 ### Notes
 
 Supabase Auth identities are stored separately from `public.user_profiles`, so an orphan can exist even when the application table contains no matching email.
+
+## 2026-09-30 - Move authentication ownership into InkFig
+
+### Request
+
+Use Supabase only as the hosted PostgreSQL database and move user credentials, email activation, login, JWTs, refresh tokens, and logout into the InkFig backend.
+
+### Changes
+
+- Removed all Supabase Auth API integration and configuration from the user backend.
+- Signup now generates its user ID, hashes the password with salted PBKDF2-HMAC-SHA256 at 600,000 iterations, and transactionally stores the InkFig user, profile, and verification challenge in PostgreSQL.
+- Email verification now activates the InkFig user and profile without calling Supabase Auth.
+- Added backend login with generic credential errors and explicit inactive/unverified-account rejection.
+- Added InkFig-signed HS256 access JWTs with issuer, subject, email, token-version, issued-at, expiry, and token-type claims; the signing secret must contain at least 32 bytes.
+- Added opaque refresh tokens stored only as SHA-256 hashes, rotated on every refresh, and revoked on logout.
+- Preserved Hebron email, ten-digit phone, Brevo verification, code expiry, attempt limits, and resend cooldown behavior.
+
+### Repositories
+
+- `inkfig-user-system`: owns credentials, authentication workflows, token issuance, persistence, migration, APIs, deployment configuration, and tests.
+- `inkfig-user-FE`: connects the login and logout UI to InkFig authentication.
+- `inkfig-main-system`: no changes required.
+
+### Files
+
+- `src/app/services/authentication_service.py`: implements login, access/refresh issuance, refresh rotation, and logout.
+- `src/app/services/registration_service.py`: replaces Supabase Auth creation/confirmation with local password hashing and activation.
+- `src/entities/dto/authentication.py`, `src/entities/exceptions/authentication.py`, `src/entities/repositories/authentication.py`: define authentication contracts and domain errors.
+- `src/infrastructure/security/passwords.py`: implements salted PBKDF2 password hashing and constant-time verification.
+- `src/infrastructure/repositories/authentication_repository.py`: reads InkFig users and persists/rotates/revokes refresh tokens.
+- `src/infrastructure/repositories/user_profile_repository.py`: creates InkFig users with profiles and activates both after verification.
+- `src/infrastructure/db/postgres/models/user_profile.py`: maps `users` and `refresh_tokens` and redirects foreign keys from Supabase Auth.
+- `src/infrastructure/integrations/supabase_auth.py`: deleted because Supabase Auth is no longer used.
+- `src/interface/api/routes/authentication.py`, `src/interface/api/controllers/authentication_controller.py`, `src/interface/dependencies/authentication.py`: expose and wire authentication endpoints.
+- `migrations/20260930_003_move_authentication_to_inkfig.sql`: creates InkFig authentication storage and redirects ownership.
+- `.env.example`, `template.yaml`, `.github/workflows/deploy.yml`: replace Supabase Auth settings with InkFig JWT settings.
+- `tests/test_authentication.py`, `tests/test_registration.py`, `tests/test_health.py`: cover password hashing, login, JWT claims, inactivity, refresh rotation, and the revised signup flow.
+
+### API
+
+- `POST /api/v1/auth/login`: accepts `email` and `password`; returns an InkFig access JWT, opaque refresh token, expiry, and user summary; returns `401` for invalid credentials and `403` until email verification/activation.
+- `POST /api/v1/auth/refresh`: accepts `refresh_token`, consumes it once, and returns a rotated session; returns `401` for invalid, expired, reused, or inactive-account tokens.
+- `POST /api/v1/auth/logout`: accepts `refresh_token`, revokes it idempotently, and returns `204`.
+- `POST /api/v1/auth/signup`, `/verify-email`, and `/resend-verification`: preserve their public contracts but now use only InkFig-owned database identities.
+
+### Database
+
+- Migration: `20260930_003_move_authentication_to_inkfig.sql`
+- Creates `public.user_accounts` with unique normalized email, password hash, active/verified state, token version, timestamps, and Hebron-email constraint; the dedicated name avoids the pre-existing unrelated `public.users` table.
+- Creates `public.refresh_tokens` with unique token hash, expiry/revocation timestamps, user cascade, and lookup/expiry indexes.
+- Backfills existing profiles into `users`, preserves IDs/status/timestamps, and redirects profile/verification foreign keys from `auth.users` to `public.users`.
+- Existing accounts receive a non-authenticating password sentinel because Supabase Auth passwords are intentionally not imported; they require a future password-reset flow.
+- Enables RLS and restricts both new tables to backend service-role database access. Rollback requires restoring the old `auth.users` foreign keys and Supabase Auth identities before removing these tables.
+
+### Permissions and scope
+
+- Signup, verification, login, refresh, and logout remain public authentication endpoints and grant no domain role.
+- Only active, email-verified InkFig users receive tokens; backend checks are authoritative.
+- JWT claims currently contain no domain permissions; future protected endpoints must load backend roles/scopes and validate the InkFig issuer/signature/expiry/token version.
+- Supabase Auth keys are no longer deployed or used by this service; Supabase provides PostgreSQL hosting only.
+
+### Frontend
+
+- The login form now calls InkFig login, handles invalid credentials and unverified accounts, stores the returned session, and enables authenticated navigation.
+- Logout calls the InkFig revocation endpoint and clears local session state even if the network request fails.
+
+### Verification
+
+- `[passed] py -3.12 -m pytest -q` - 31 tests passed.
+- `[passed] py -3.12 -m mypy src tests` - no issues in 55 source files.
+- `[passed] py -3.12 -m compileall -q src tests migrations`
+- `[passed] sam validate --lint`
+- `[passed] sam build`
+- `[passed] git diff --check`
+- `[not run] production login` - requires migration and deployment through the protected workflow.
+
+### Deployment
+
+- Deploy `inkfig-user-system`; migration `20260930_003_move_authentication_to_inkfig.sql` must run before Lambda deployment and the workflow runs it first.
+- Production requires the new `JWT_SECRET` secret with at least 32 bytes; it was supplied in the GitHub `production` environment before push.
+- `SUPABASE_URL` and `SUPABASE_SECRET_KEY` are no longer passed to this service; `DATABASE_URL` remains required for the Supabase-hosted PostgreSQL database.
+- Deploy `inkfig-user-FE` only after the backend workflow succeeds.
+
+### Git
+
+- Branch: `main`
+- Commit: this ticket's focused commit
+- Push: `successful`
+
+### Notes
+
+Existing Supabase Auth rows are deliberately left untouched but are no longer read or written by InkFig. A password-reset feature is required before legacy users can authenticate through the new backend.

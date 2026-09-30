@@ -15,6 +15,7 @@ from src.entities.enums.gender import Gender
 from src.entities.exceptions.registration import EmailAlreadyRegisteredError
 from src.infrastructure.db.postgres.models.user_profile import (
     EmailVerificationCodeModel,
+    UserAccountModel,
     UserProfileModel,
 )
 
@@ -35,6 +36,12 @@ class SqlAlchemyUserProfileRepository:
             date_of_birth=profile.date_of_birth,
             is_active=False,
         )
+        account_model = UserAccountModel(
+            user_id=profile.user_id,
+            email=profile.email,
+            password_hash=profile.password_hash,
+            is_active=False,
+        )
         code_model = EmailVerificationCodeModel(
             verification_id=uuid4(),
             user_id=verification.user_id,
@@ -42,7 +49,7 @@ class SqlAlchemyUserProfileRepository:
             expires_at=verification.expires_at,
             max_attempts=verification.max_attempts,
         )
-        self._session.add_all([model, code_model])
+        self._session.add_all([account_model, model, code_model])
         try:
             await self._session.commit()
             await self._session.refresh(model)
@@ -98,6 +105,11 @@ class SqlAlchemyUserProfileRepository:
             update(EmailVerificationCodeModel)
             .where(EmailVerificationCodeModel.verification_id == verification_id)
             .values(consumed_at=verified_at)
+        )
+        await self._session.execute(
+            update(UserAccountModel)
+            .where(UserAccountModel.user_id == user_id)
+            .values(is_active=True, email_verified_at=verified_at, updated_at=verified_at)
         )
         await self._session.execute(
             update(UserProfileModel)
