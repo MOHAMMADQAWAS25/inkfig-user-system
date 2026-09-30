@@ -6,6 +6,7 @@ from uuid import UUID
 
 from src.entities.dto.registration import (
     EmailVerificationCreate,
+    PendingEmailVerification,
     RegisterUserRequest,
     RegisterUserResponse,
     ResendVerificationResponse,
@@ -13,6 +14,7 @@ from src.entities.dto.registration import (
     VerifyEmailResponse,
 )
 from src.entities.exceptions.registration import (
+    EmailAlreadyRegisteredError,
     VerificationAttemptsExceededError,
     VerificationCodeExpiredError,
     VerificationCodeInvalidError,
@@ -48,7 +50,13 @@ class RegistrationService:
         self._resend_cooldown_seconds = resend_cooldown_seconds
 
     async def register(self, request: RegisterUserRequest) -> RegisterUserResponse:
-        user_id = await self._auth_gateway.create_user(request.email, request.password)
+        try:
+            user_id = await self._auth_gateway.create_user(request.email, request.password)
+        except EmailAlreadyRegisteredError:
+            pending = await self._profile_repository.get_pending_verification(request.email)
+            if pending is None:
+                raise
+            return await self._resume_pending_registration(pending)
         code = self._generate_code()
         verification = self._new_verification(user_id, code)
         try:
@@ -73,6 +81,35 @@ class RegistrationService:
             email=request.email,
             expires_in_seconds=self._code_ttl_minutes * 60,
             resend_after_seconds=self._resend_cooldown_seconds,
+        )
+
+    async def _resume_pending_registration(
+        self, challenge: PendingEmailVerification
+    ) -> RegisterUserResponse:
+        now = datetime.now(timezone.utc)
+        resend_available_at = challenge.sent_at + timedelta(
+            seconds=self._resend_cooldown_seconds
+        )
+        if resend_available_at <= now:
+            code = self._generate_code()
+            verification = self._new_verification(challenge.user_id, code)
+            await self._email_gateway.send_verification_code(
+                challenge.email, challenge.full_name, code, self._code_ttl_minutes
+            )
+            await self._profile_repository.replace_verification(
+                challenge.verification_id, verification
+            )
+            expires_in_seconds = self._code_ttl_minutes * 60
+            resend_after_seconds = self._resend_cooldown_seconds
+        else:
+            expires_in_seconds = max(0, int((challenge.expires_at - now).total_seconds()))
+            resend_after_seconds = max(
+                0, int((resend_available_at - now).total_seconds())
+            )
+        return RegisterUserResponse(
+            email=challenge.email,
+            expires_in_seconds=expires_in_seconds,
+            resend_after_seconds=resend_after_seconds,
         )
 
     async def verify_email(self, email: str, code: str) -> VerifyEmailResponse:

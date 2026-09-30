@@ -14,6 +14,7 @@ from src.entities.dto.registration import (
 )
 from src.entities.enums.gender import Gender
 from src.entities.exceptions.registration import (
+    EmailAlreadyRegisteredError,
     VerificationCodeExpiredError,
     VerificationCodeInvalidError,
 )
@@ -86,12 +87,15 @@ def test_registration_requires_every_field(field: str) -> None:
 
 
 class FakeAuthGateway:
-    def __init__(self) -> None:
+    def __init__(self, email_already_registered: bool = False) -> None:
         self.user_id = uuid4()
+        self.email_already_registered = email_already_registered
         self.deleted_user_id: UUID | None = None
         self.confirmed_user_id: UUID | None = None
 
     async def create_user(self, email: str, password: str) -> UUID:
+        if self.email_already_registered:
+            raise EmailAlreadyRegisteredError
         return self.user_id
 
     async def delete_user(self, user_id: UUID) -> None:
@@ -213,6 +217,47 @@ async def test_registration_removes_auth_user_when_profile_creation_fails() -> N
         await service.register(registration_request())
 
     assert auth_gateway.deleted_user_id == auth_gateway.user_id
+
+
+@pytest.mark.asyncio
+async def test_registration_resumes_existing_pending_verification() -> None:
+    repository = FakeProfileRepository()
+    email_gateway = FakeEmailGateway()
+    initial_service = RegistrationService(
+        FakeAuthGateway(), repository, email_gateway, "test-secret"
+    )
+    await initial_service.register(registration_request())
+    assert repository.challenge is not None
+    original_verification_id = repository.challenge.verification_id
+
+    repository.challenge = repository.challenge.model_copy(
+        update={"sent_at": datetime(2020, 1, 1, tzinfo=timezone.utc)}
+    )
+    service = RegistrationService(
+        FakeAuthGateway(email_already_registered=True),
+        repository,
+        email_gateway,
+        "test-secret",
+    )
+
+    result = await service.register(registration_request())
+
+    assert result.verification_required is True
+    assert repository.challenge.verification_id != original_verification_id
+    assert repository.challenge.code_hash != email_gateway.code
+
+
+@pytest.mark.asyncio
+async def test_registration_keeps_conflict_for_completed_account() -> None:
+    service = RegistrationService(
+        FakeAuthGateway(email_already_registered=True),
+        FakeProfileRepository(),
+        FakeEmailGateway(),
+        "test-secret",
+    )
+
+    with pytest.raises(EmailAlreadyRegisteredError):
+        await service.register(registration_request())
 
 
 @pytest.mark.asyncio
