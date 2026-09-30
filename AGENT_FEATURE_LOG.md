@@ -1007,3 +1007,71 @@ Generate and email a time-limited code after signup, validate the submitted code
 ### Notes
 
 Pending identities and profiles exist only to hold the password securely in Supabase; they remain unconfirmed and inactive until the code succeeds. Rotating `SUPABASE_SECRET_KEY` invalidates outstanding code hashes, so users with pending codes must request replacements after a rotation.
+
+## 2026-09-30 - Resume pending signup instead of reporting a duplicate account
+
+### Request
+
+Fix signup returning `409 An account with this email already exists` for an email whose earlier registration is still pending verification.
+
+### Changes
+
+- Distinguished a pending, inactive signup from a completed account when Supabase reports that the identity already exists.
+- A repeated signup now resumes the existing verification flow and sends a replacement code when the resend cooldown has elapsed.
+- During the cooldown, the existing verification remains valid and the response reports the remaining expiry and cooldown durations.
+- Completed accounts and orphaned provider identities without a pending application profile continue to return `409`.
+
+### Repositories
+
+- `inkfig-user-system`: corrected pending-registration recovery and added regression coverage.
+- `inkfig-user-FE`: no changes required because the successful signup response contract is unchanged.
+- `inkfig-main-system`: no changes required.
+
+### Files
+
+- `src/app/services/registration_service.py`: resumes an existing pending verification after a duplicate Supabase identity response.
+- `tests/test_registration.py`: covers pending-signup recovery and preserves conflicts for completed accounts.
+- `AGENT_FEATURE_LOG.md`: records this fix.
+
+### API
+
+- `POST /api/v1/auth/signup`: returns the existing `201` pending-verification response for an inactive account with a pending challenge; genuine completed-account duplicates still return `409`.
+- Request and response fields are unchanged.
+
+### Database
+
+No migration required.
+
+### Permissions and scope
+
+- Signup remains public and grants no role or permission.
+- Only an existing inactive profile with a pending verification challenge can be resumed.
+- The retry does not replace the existing Supabase password or take over an active account.
+
+### Frontend
+
+No frontend change is required. The existing signup success path proceeds to the email-verification screen.
+
+### Verification
+
+- `[passed] py -3.13 -m pytest` - 28 tests passed.
+- `[passed] py -3.13 -m mypy src tests` - no issues in 45 source files.
+- `[passed] py -3.13 -m compileall -q src tests migrations` using a workspace bytecode cache because existing source cache directories are not writable in this environment.
+- `[passed] git diff --check`
+- `[not run] py -3.12 verification` - Python 3.12 is not installed in this environment; Python 3.13 completed the full suite.
+- `[not run] live production signup` - requires deployment through the protected main-branch workflow and a real university mailbox.
+
+### Deployment
+
+- Merge this backend branch into `main` to trigger tests, SAM build, database migration runner, AWS deployment, and the production health check.
+- No new migration, secret, environment variable, or frontend deployment is required.
+
+### Git
+
+- Branch: `fix/resume-pending-signup`
+- Commit: this ticket's focused commit.
+- Push: feature branch pushed to `origin` for pull-request review.
+
+### Notes
+
+The retry intentionally keeps the password from the original pending registration; changing an existing identity's password through a public signup retry would be unsafe.
