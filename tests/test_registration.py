@@ -98,6 +98,11 @@ class FakeProfileRepository:
         self.challenge: PendingEmailVerification | None = None
         self.failed_attempts = 0
         self.activated = False
+        self.legacy_user_id: UUID | None = None
+        self.restarted_legacy = False
+
+    async def get_recoverable_legacy_user_id(self, email: str) -> UUID | None:
+        return self.legacy_user_id
 
     async def create_pending(
         self, profile: UserProfileCreate, verification: EmailVerificationCreate
@@ -144,8 +149,17 @@ class FakeProfileRepository:
                 }
             )
 
+    async def restart_legacy_account(
+        self, profile: UserProfileCreate, verification: EmailVerificationCreate
+    ) -> None:
+        self.restarted_legacy = True
+        await self.create_pending(profile, verification)
+
 
 class FailingProfileRepository:
+    async def get_recoverable_legacy_user_id(self, email: str) -> UUID | None:
+        return None
+
     async def create_pending(
         self, profile: UserProfileCreate, verification: EmailVerificationCreate
     ) -> RegisteredUser:
@@ -164,6 +178,11 @@ class FailingProfileRepository:
 
     async def replace_verification(
         self, previous_id: UUID, verification: EmailVerificationCreate
+    ) -> None:
+        return None
+
+    async def restart_legacy_account(
+        self, profile: UserProfileCreate, verification: EmailVerificationCreate
     ) -> None:
         return None
 
@@ -228,6 +247,24 @@ async def test_registration_resumes_existing_pending_verification() -> None:
     assert result.verification_required is True
     assert repository.challenge.verification_id != original_verification_id
     assert repository.challenge.code_hash != email_gateway.code
+
+
+@pytest.mark.asyncio
+async def test_registration_restarts_only_migrated_legacy_account() -> None:
+    repository = FakeProfileRepository()
+    repository.legacy_user_id = uuid4()
+    email_gateway = FakeEmailGateway()
+    service = RegistrationService(
+        repository, email_gateway, FakePasswordHasher(), "test-secret"
+    )
+
+    result = await service.register(registration_request())
+
+    assert result.verification_required is True
+    assert repository.restarted_legacy is True
+    assert repository.challenge is not None
+    assert repository.challenge.user_id == repository.legacy_user_id
+    assert len(email_gateway.code) == 6
 
 
 @pytest.mark.asyncio

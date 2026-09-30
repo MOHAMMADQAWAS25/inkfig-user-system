@@ -15,6 +15,7 @@ from src.entities.enums.gender import Gender
 from src.entities.exceptions.registration import EmailAlreadyRegisteredError
 from src.infrastructure.db.postgres.models.user_profile import (
     EmailVerificationCodeModel,
+    RefreshTokenModel,
     UserAccountModel,
     UserProfileModel,
 )
@@ -23,6 +24,13 @@ from src.infrastructure.db.postgres.models.user_profile import (
 class SqlAlchemyUserProfileRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def get_recoverable_legacy_user_id(self, email: str) -> UUID | None:
+        statement = select(UserAccountModel.user_id).where(
+            UserAccountModel.email == email,
+            UserAccountModel.password_hash == "!password-reset-required!",
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none()
 
     async def create_pending(
         self, profile: UserProfileCreate, verification: EmailVerificationCreate
@@ -131,6 +139,61 @@ class SqlAlchemyUserProfileRepository:
             EmailVerificationCodeModel(
                 verification_id=uuid4(),
                 user_id=verification.user_id,
+                code_hash=verification.code_hash,
+                expires_at=verification.expires_at,
+                max_attempts=verification.max_attempts,
+            )
+        )
+        await self._session.commit()
+
+    async def restart_legacy_account(
+        self, profile: UserProfileCreate, verification: EmailVerificationCreate
+    ) -> None:
+        statement = (
+            select(UserAccountModel, UserProfileModel)
+            .join(UserProfileModel, UserProfileModel.user_id == UserAccountModel.user_id)
+            .where(UserAccountModel.email == profile.email)
+            .with_for_update()
+        )
+        row = (await self._session.execute(statement)).first()
+        if row is None or row[0].password_hash != "!password-reset-required!":
+            await self._session.rollback()
+            raise EmailAlreadyRegisteredError
+        account, existing_profile = row
+        now = datetime.now(verification.expires_at.tzinfo)
+        account.password_hash = profile.password_hash
+        account.is_active = False
+        account.email_verified_at = None
+        account.token_version += 1
+        account.updated_at = now
+        existing_profile.full_name = profile.full_name
+        existing_profile.phone_number = profile.phone_number
+        existing_profile.gender = profile.gender.value
+        existing_profile.date_of_birth = profile.date_of_birth
+        existing_profile.is_active = False
+        existing_profile.email_verified_at = None
+        existing_profile.updated_at = now
+        await self._session.execute(
+            update(EmailVerificationCodeModel)
+            .where(
+                EmailVerificationCodeModel.user_id == account.user_id,
+                EmailVerificationCodeModel.consumed_at.is_(None),
+                EmailVerificationCodeModel.invalidated_at.is_(None),
+            )
+            .values(invalidated_at=now)
+        )
+        await self._session.execute(
+            update(RefreshTokenModel)
+            .where(
+                RefreshTokenModel.user_id == account.user_id,
+                RefreshTokenModel.revoked_at.is_(None),
+            )
+            .values(revoked_at=now)
+        )
+        self._session.add(
+            EmailVerificationCodeModel(
+                verification_id=uuid4(),
+                user_id=account.user_id,
                 code_hash=verification.code_hash,
                 expires_at=verification.expires_at,
                 max_attempts=verification.max_attempts,

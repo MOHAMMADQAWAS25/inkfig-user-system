@@ -1231,3 +1231,70 @@ Use Supabase only as the hosted PostgreSQL database and move user credentials, e
 ### Notes
 
 Existing Supabase Auth rows are deliberately left untouched but are no longer read or written by InkFig. A password-reset feature is required before legacy users can authenticate through the new backend.
+
+## 2026-09-30 - Recover migrated legacy accounts through verified signup
+
+### Request
+
+Allow `22220013@students.hebron.edu` and other accounts migrated from Supabase Auth to register in InkFig instead of receiving `409 An account with this email already exists`.
+
+### Changes
+
+- Signup now detects only accounts carrying the migration's non-authenticating `!password-reset-required!` sentinel.
+- A recoverable legacy account keeps its user ID, receives the newly submitted password hash and profile fields, becomes inactive/unverified, revokes old refresh tokens, invalidates old challenges, and receives a new verification code.
+- The account becomes usable only after the normal email-code verification succeeds.
+- Current InkFig accounts with real password hashes remain protected and continue returning `409`.
+
+### Repositories
+
+- `inkfig-user-system`: added safe legacy-account recovery during signup.
+- `inkfig-user-FE`: no changes required; the signup success contract is unchanged.
+- `inkfig-main-system`: no changes required.
+
+### Files
+
+- `src/app/services/registration_service.py`: chooses the migrated user ID and starts its verification flow.
+- `src/entities/repositories/registration.py`: adds legacy lookup/restart repository contracts.
+- `src/infrastructure/repositories/user_profile_repository.py`: atomically replaces only sentinel credentials, refresh tokens, verification challenges, and profile state.
+- `tests/test_registration.py`: covers migrated-account recovery and identity preservation.
+
+### API
+
+- `POST /api/v1/auth/signup`: migrated sentinel accounts now return the normal `201` verification-required response; active/current InkFig duplicates still return `409`. Request and response fields are unchanged.
+
+### Database
+
+No migration required. Recovery uses the sentinel written by `20260930_003_move_authentication_to_inkfig.sql` and existing account/profile/verification tables.
+
+### Permissions and scope
+
+- Signup remains public and grants no role or permission.
+- Recovery is backend-limited to exact normalized emails with the migration sentinel and still requires mailbox ownership through the six-digit code.
+- Current credentials cannot be replaced through this path; backend validation is authoritative.
+
+### Frontend
+
+No frontend changes. Successful recovery follows the existing localized verification screen and resend workflow.
+
+### Verification
+
+- `[passed] py -3.12 -m pytest -q` - 32 tests passed.
+- `[passed] py -3.12 -m mypy src tests` - no issues in 55 source files.
+- `[passed] py -3.12 -m compileall -q src tests migrations`
+- `[passed] git diff --check`
+- `[not run] live signup for 22220013@students.hebron.edu` - deployment must complete before sending a real verification email.
+
+### Deployment
+
+- Deploy `inkfig-user-system` through the existing AWS workflow.
+- No migration, new secret, environment-variable, or frontend deployment is required.
+
+### Git
+
+- Branch: `main`
+- Commit: this ticket's focused commit
+- Push: `successful`
+
+### Notes
+
+Recovery deliberately reuses the migrated user ID so profiles and future references remain stable.

@@ -52,27 +52,31 @@ class RegistrationService:
         pending = await self._profile_repository.get_pending_verification(request.email)
         if pending is not None:
             return await self._resume_pending_registration(pending)
-        user_id = UUID(bytes=secrets.token_bytes(16), version=4)
+        legacy_user_id = await self._profile_repository.get_recoverable_legacy_user_id(
+            request.email
+        )
+        user_id = legacy_user_id or UUID(bytes=secrets.token_bytes(16), version=4)
         code = self._generate_code()
         verification = self._new_verification(user_id, code)
-        try:
+        profile = UserProfileCreate(
+            user_id=user_id,
+            password_hash=self._password_hasher.hash(request.password),
+            email=request.email,
+            full_name=request.full_name,
+            phone_number=request.phone_number,
+            gender=request.gender,
+            date_of_birth=request.date_of_birth,
+        )
+        if legacy_user_id is not None:
+            await self._profile_repository.restart_legacy_account(profile, verification)
+        else:
             await self._profile_repository.create_pending(
-                UserProfileCreate(
-                    user_id=user_id,
-                    password_hash=self._password_hasher.hash(request.password),
-                    email=request.email,
-                    full_name=request.full_name,
-                    phone_number=request.phone_number,
-                    gender=request.gender,
-                    date_of_birth=request.date_of_birth,
-                ),
+                profile,
                 verification,
             )
-            await self._email_gateway.send_verification_code(
-                request.email, request.full_name, code, self._code_ttl_minutes
-            )
-        except Exception:
-            raise
+        await self._email_gateway.send_verification_code(
+            request.email, request.full_name, code, self._code_ttl_minutes
+        )
         return RegisterUserResponse(
             email=request.email,
             expires_in_seconds=self._code_ttl_minutes * 60,

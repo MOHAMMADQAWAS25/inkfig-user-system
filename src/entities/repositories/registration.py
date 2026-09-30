@@ -18,6 +18,8 @@ class PasswordHasher(Protocol):
 
 
 class UserProfileRepository(Protocol):
+    async def get_recoverable_legacy_user_id(self, email: str) -> UUID | None: ...
+
     async def create_pending(
         self, profile: UserProfileCreate, verification: EmailVerificationCreate
     ) -> RegisteredUser: ...
@@ -34,6 +36,10 @@ class UserProfileRepository(Protocol):
 
     async def replace_verification(
         self, previous_id: UUID, verification: EmailVerificationCreate
+    ) -> None: ...
+
+    async def restart_legacy_account(
+        self, profile: UserProfileCreate, verification: EmailVerificationCreate
     ) -> None: ...
 
 
