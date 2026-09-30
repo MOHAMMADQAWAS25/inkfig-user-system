@@ -919,3 +919,91 @@ No migration required. The existing `phone_number` column already stores the nor
 ### Notes
 
 Phone validation checks digit count only; country/carrier ownership verification is outside this ticket.
+
+## 2026-09-30 - Verify signup email before account activation
+
+### Request
+
+Generate and email a time-limited code after signup, validate the submitted code, and make the account usable only after successful verification.
+
+### Changes
+
+- Signup now creates an unconfirmed Supabase identity and an inactive profile, generates a cryptographically random six-digit code, stores only its HMAC-SHA256 hash, and sends the code through the configured Brevo template.
+- Codes expire after 10 minutes, are single-use, allow at most five failed attempts, and can be resent after a 60-second cooldown; resending invalidates the previous code.
+- Successful verification confirms the Supabase email and activates the profile; signup compensation deletes the pending identity if database persistence or email delivery fails.
+- Existing active accounts remain active and are backfilled as previously verified.
+- Hebron email, ten-digit phone, password, profile, and role behavior outside verification remain unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: added verification domain contracts, workflow, Brevo and Supabase integrations, persistence, API endpoints, migration, deployment configuration, and tests.
+- `inkfig-user-FE`: added the verification and resend user experience.
+- `inkfig-main-system`: no changes required.
+
+### Files
+
+- `src/app/services/registration_service.py`: coordinates pending signup, secure code verification, activation, expiry, attempts, and resend cooldown.
+- `src/entities/dto/registration.py`: adds verification request, response, and persistence contracts.
+- `src/entities/exceptions/registration.py`: adds verification and email-delivery errors.
+- `src/entities/repositories/registration.py`: expands the authentication, persistence, and email gateway interfaces.
+- `src/infrastructure/integrations/brevo_email.py`: sends the English Brevo transactional template without logging the code or API key.
+- `src/infrastructure/integrations/supabase_auth.py`: creates unconfirmed identities and confirms them after code verification.
+- `src/infrastructure/db/postgres/models/user_profile.py`: maps inactive profiles, verification state, and hashed-code records.
+- `src/infrastructure/repositories/user_profile_repository.py`: persists, locks, consumes, replaces, and activates verification challenges.
+- `migrations/20260930_002_add_email_verification.sql`: adds email verification persistence and profile verification state.
+- `src/interface/api/controllers/registration_controller.py`, `src/interface/api/routes/registration.py`, `src/interface/dependencies/registration.py`: expose and wire the verification workflow.
+- `.env.example`, `template.yaml`, `.github/workflows/deploy.yml`: document and deploy Brevo configuration.
+- `tests/test_registration.py`: covers pending signup, hashed codes, successful verification, invalid attempts, expiry, and compensation.
+
+### API
+
+- `POST /api/v1/auth/signup`: now returns the normalized email, `verification_required`, code lifetime, and resend cooldown after creating an inactive pending account and sending its code; returns `409` for duplicates and `503` for provider/email failures.
+- `POST /api/v1/auth/verify-email`: accepts `email` and an exact six-digit `code`; activates the account on success and returns `400` for an incorrect code, `404` when no pending challenge exists, `410` when expired, `429` after the attempt limit, and `503` for provider failure.
+- `POST /api/v1/auth/resend-verification`: accepts `email`, sends a replacement code, invalidates the previous code, and returns lifetime/cooldown data; returns `404`, `429`, or `503` as applicable.
+
+### Database
+
+- Migration: `20260930_002_add_email_verification.sql`
+- Adds nullable `user_profiles.email_verified_at`, changes the default for new profiles to inactive, and backfills active existing profiles with their creation timestamp.
+- Adds `email_verification_codes` with profile foreign key/cascade, hash, expiry, attempt limit, consumed/invalidated timestamps, pending and expiry indexes, RLS, and service-role-only access.
+- Rollback must preserve or export verification audit data before dropping the table/column; restoring the former active default would re-enable unverified signup and is not recommended.
+
+### Permissions and scope
+
+- Signup, verification, and resend are public endpoints and grant no application role or permission.
+- Only Hebron University email formats are accepted; account activation is limited to the matching pending identity.
+- Supabase service-role and database service credentials remain backend-only; Brevo credentials never reach the frontend.
+- Verification state, attempt limits, expiry, and activation are validated by the backend.
+
+### Frontend
+
+- Signup redirects to the localized `/:language/verify-email` route with the email prefilled.
+- The responsive RTL/LTR form accepts exactly six digits, displays expiry/invalid/attempt errors, provides a resend cooldown, and links to login only after success.
+- Existing visual language, theme behavior, welcome/login/signup routes, and navigation remain unchanged.
+
+### Verification
+
+- `[passed] py -3.12 -m pytest` - 26 tests passed.
+- `[passed] py -3.12 -m mypy src tests` - no issues in 45 source files.
+- `[passed] py -3.12 -m compileall -q src tests`
+- `[passed] sam validate --lint`
+- `[passed] sam build`
+- `[passed] git diff --check`
+- `[failed] initial py -3.12 -m mypy src tests` - the deliberate failing repository test double lacked the expanded protocol methods; the double was completed and the rerun passed.
+- `[not run] live Brevo delivery and production signup` - no recipient address was supplied and production migration/deployment is handled by the protected workflow.
+
+### Deployment
+
+- Deploy `inkfig-user-system`; migration `20260930_002_add_email_verification.sql` must run before the SAM deployment and the existing workflow does so.
+- Production requires `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, `BREVO_SENDER_NAME`, and `BREVO_VERIFY_EMAIL_TEMPLATE_ID` GitHub environment secrets in addition to the existing Supabase/database secrets.
+- Deploy `inkfig-user-FE` after the backend deployment succeeds.
+
+### Git
+
+- Branch: `main`
+- Commit: this ticket's focused commit
+- Push: `successful`
+
+### Notes
+
+Pending identities and profiles exist only to hold the password securely in Supabase; they remain unconfirmed and inactive until the code succeeds. Rotating `SUPABASE_SECRET_KEY` invalidates outstanding code hashes, so users with pending codes must request replacements after a rotation.

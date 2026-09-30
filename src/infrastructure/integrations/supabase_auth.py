@@ -25,7 +25,7 @@ class SupabaseAuthGateway:
                 response = await client.post(
                     f"{self._base_url}/auth/v1/admin/users",
                     headers=self._headers,
-                    json={"email": email, "password": password, "email_confirm": True},
+                    json={"email": email, "password": password, "email_confirm": False},
                 )
         except httpx.RequestError as error:
             raise RegistrationProviderError("Supabase user creation was unreachable.") from error
@@ -52,4 +52,19 @@ class SupabaseAuthGateway:
         if response.status_code not in {200, 204, 404}:
             raise RegistrationProviderError(
                 f"Supabase compensation failed with status {response.status_code}."
+            )
+
+    async def confirm_email(self, user_id: UUID) -> None:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.put(
+                    f"{self._base_url}/auth/v1/admin/users/{user_id}",
+                    headers=self._headers,
+                    json={"email_confirm": True},
+                )
+        except httpx.RequestError as error:
+            raise RegistrationProviderError("Supabase email confirmation was unreachable.") from error
+        if response.status_code not in {200, 204}:
+            raise RegistrationProviderError(
+                f"Supabase email confirmation failed with status {response.status_code}."
             )

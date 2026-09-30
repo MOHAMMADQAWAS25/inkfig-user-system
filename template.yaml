@@ -28,6 +28,16 @@ Parameters:
   CertificateArn:
     Type: String
     Description: ACM certificate ARN for user-api.inkfig-hu.com in the deployment region.
+  BrevoApiKey:
+    Type: String
+    NoEcho: true
+  BrevoSenderEmail:
+    Type: String
+  BrevoSenderName:
+    Type: String
+    Default: InkFig
+  BrevoVerifyEmailTemplateId:
+    Type: Number
   ProjectName:
     Type: String
     Default: inkfig
@@ -50,6 +60,13 @@ Globals:
         SUPABASE_URL: !Ref SupabaseUrl
         SUPABASE_SECRET_KEY: !Ref SupabaseSecretKey
         DATABASE_URL: !Ref DatabaseUrl
+        BREVO_API_KEY: !Ref BrevoApiKey
+        BREVO_SENDER_EMAIL: !Ref BrevoSenderEmail
+        BREVO_SENDER_NAME: !Ref BrevoSenderName
+        BREVO_VERIFY_EMAIL_TEMPLATE_ID: !Ref BrevoVerifyEmailTemplateId
+        VERIFICATION_CODE_TTL_MINUTES: 10
+        VERIFICATION_MAX_ATTEMPTS: 5
+        VERIFICATION_RESEND_COOLDOWN_SECONDS: 60
 
 Resources:
   HttpApi:

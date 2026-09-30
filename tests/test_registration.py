@@ -6,11 +6,17 @@ from pydantic import ValidationError
 
 from src.app.services.registration_service import RegistrationService
 from src.entities.dto.registration import (
+    EmailVerificationCreate,
+    PendingEmailVerification,
     RegisteredUser,
     RegisterUserRequest,
     UserProfileCreate,
 )
 from src.entities.enums.gender import Gender
+from src.entities.exceptions.registration import (
+    VerificationCodeExpiredError,
+    VerificationCodeInvalidError,
+)
 
 
 def registration_request(**overrides: object) -> RegisterUserRequest:
@@ -83,6 +89,7 @@ class FakeAuthGateway:
     def __init__(self) -> None:
         self.user_id = uuid4()
         self.deleted_user_id: UUID | None = None
+        self.confirmed_user_id: UUID | None = None
 
     async def create_user(self, email: str, password: str) -> UUID:
         return self.user_id
@@ -90,39 +97,160 @@ class FakeAuthGateway:
     async def delete_user(self, user_id: UUID) -> None:
         self.deleted_user_id = user_id
 
+    async def confirm_email(self, user_id: UUID) -> None:
+        self.confirmed_user_id = user_id
+
 
 class FakeProfileRepository:
-    async def create(self, profile: UserProfileCreate) -> RegisteredUser:
+    def __init__(self) -> None:
+        self.challenge: PendingEmailVerification | None = None
+        self.failed_attempts = 0
+        self.activated = False
+
+    async def create_pending(
+        self, profile: UserProfileCreate, verification: EmailVerificationCreate
+    ) -> RegisteredUser:
+        self.challenge = PendingEmailVerification(
+            verification_id=uuid4(),
+            user_id=profile.user_id,
+            email=profile.email,
+            full_name=profile.full_name,
+            code_hash=verification.code_hash,
+            expires_at=verification.expires_at,
+            attempts=0,
+            max_attempts=verification.max_attempts,
+            sent_at=datetime.now(timezone.utc),
+        )
         return RegisteredUser(
             **profile.model_dump(),
-            is_active=True,
+            is_active=False,
             created_at=datetime.now(timezone.utc),
         )
 
+    async def get_pending_verification(self, email: str) -> PendingEmailVerification | None:
+        return self.challenge
+
+    async def record_failed_attempt(self, verification_id: UUID) -> None:
+        self.failed_attempts += 1
+
+    async def activate_verified_user(
+        self, verification_id: UUID, user_id: UUID, verified_at: datetime
+    ) -> None:
+        self.activated = True
+
+    async def replace_verification(
+        self, previous_id: UUID, verification: EmailVerificationCreate
+    ) -> None:
+        if self.challenge:
+            self.challenge = self.challenge.model_copy(
+                update={
+                    "verification_id": uuid4(),
+                    "code_hash": verification.code_hash,
+                    "expires_at": verification.expires_at,
+                    "attempts": 0,
+                    "sent_at": datetime.now(timezone.utc),
+                }
+            )
+
 
 class FailingProfileRepository:
-    async def create(self, profile: UserProfileCreate) -> RegisteredUser:
+    async def create_pending(
+        self, profile: UserProfileCreate, verification: EmailVerificationCreate
+    ) -> RegisteredUser:
         raise RuntimeError("database failure")
+
+    async def get_pending_verification(self, email: str) -> PendingEmailVerification | None:
+        return None
+
+    async def record_failed_attempt(self, verification_id: UUID) -> None:
+        return None
+
+    async def activate_verified_user(
+        self, verification_id: UUID, user_id: UUID, verified_at: datetime
+    ) -> None:
+        return None
+
+    async def replace_verification(
+        self, previous_id: UUID, verification: EmailVerificationCreate
+    ) -> None:
+        return None
+
+
+class FakeEmailGateway:
+    def __init__(self) -> None:
+        self.code = ""
+
+    async def send_verification_code(
+        self, email: str, full_name: str, code: str, expires_minutes: int
+    ) -> None:
+        self.code = code
 
 
 @pytest.mark.asyncio
 async def test_registration_creates_auth_user_and_profile() -> None:
     auth_gateway = FakeAuthGateway()
-    service = RegistrationService(auth_gateway, FakeProfileRepository())
+    repository = FakeProfileRepository()
+    email_gateway = FakeEmailGateway()
+    service = RegistrationService(auth_gateway, repository, email_gateway, "test-secret")
 
     result = await service.register(registration_request())
 
-    assert result.user.user_id == auth_gateway.user_id
-    assert result.user.gender is Gender.FEMALE
-    assert result.user.date_of_birth == date(2002, 5, 17)
+    assert result.email == "12345678@students.hebron.edu"
+    assert result.verification_required is True
+    assert repository.challenge is not None
+    assert repository.challenge.code_hash != email_gateway.code
+    assert len(email_gateway.code) == 6
 
 
 @pytest.mark.asyncio
 async def test_registration_removes_auth_user_when_profile_creation_fails() -> None:
     auth_gateway = FakeAuthGateway()
-    service = RegistrationService(auth_gateway, FailingProfileRepository())
+    service = RegistrationService(
+        auth_gateway, FailingProfileRepository(), FakeEmailGateway(), "test-secret"
+    )
 
     with pytest.raises(RuntimeError, match="database failure"):
         await service.register(registration_request())
 
     assert auth_gateway.deleted_user_id == auth_gateway.user_id
+
+
+@pytest.mark.asyncio
+async def test_correct_code_confirms_and_activates_account() -> None:
+    auth_gateway = FakeAuthGateway()
+    repository = FakeProfileRepository()
+    email_gateway = FakeEmailGateway()
+    service = RegistrationService(auth_gateway, repository, email_gateway, "test-secret")
+    await service.register(registration_request())
+
+    result = await service.verify_email(registration_request().email, email_gateway.code)
+
+    assert result.verified is True
+    assert auth_gateway.confirmed_user_id == auth_gateway.user_id
+    assert repository.activated is True
+
+
+@pytest.mark.asyncio
+async def test_incorrect_code_records_failed_attempt() -> None:
+    repository = FakeProfileRepository()
+    service = RegistrationService(FakeAuthGateway(), repository, FakeEmailGateway(), "test-secret")
+    await service.register(registration_request())
+
+    with pytest.raises(VerificationCodeInvalidError):
+        await service.verify_email(registration_request().email, "999999")
+
+    assert repository.failed_attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_expired_code_is_rejected() -> None:
+    repository = FakeProfileRepository()
+    service = RegistrationService(FakeAuthGateway(), repository, FakeEmailGateway(), "test-secret")
+    await service.register(registration_request())
+    assert repository.challenge is not None
+    repository.challenge = repository.challenge.model_copy(
+        update={"expires_at": datetime(2020, 1, 1, tzinfo=timezone.utc)}
+    )
+
+    with pytest.raises(VerificationCodeExpiredError):
+        await service.verify_email(registration_request().email, "000000")

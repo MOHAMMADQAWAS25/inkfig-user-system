@@ -11,6 +11,13 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_secret_key: str = ""
     database_url: str = ""
+    brevo_api_key: str = ""
+    brevo_sender_email: str = ""
+    brevo_sender_name: str = "InkFig"
+    brevo_verify_email_template_id: int = 0
+    verification_code_ttl_minutes: int = 10
+    verification_max_attempts: int = 5
+    verification_resend_cooldown_seconds: int = 60
 
     model_config = SettingsConfigDict(
         env_file=".env",

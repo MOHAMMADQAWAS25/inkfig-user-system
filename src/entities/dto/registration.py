@@ -76,6 +76,25 @@ class UserProfileCreate(BaseModel):
     date_of_birth: date
 
 
+class EmailVerificationCreate(BaseModel):
+    user_id: UUID
+    code_hash: str = Field(min_length=64, max_length=64)
+    expires_at: datetime
+    max_attempts: int = Field(gt=0)
+
+
+class PendingEmailVerification(BaseModel):
+    verification_id: UUID
+    user_id: UUID
+    email: str
+    full_name: str
+    code_hash: str
+    expires_at: datetime
+    attempts: int
+    max_attempts: int
+    sent_at: datetime
+
+
 class RegisteredUser(BaseModel):
     user_id: UUID
     email: str
@@ -88,4 +107,37 @@ class RegisteredUser(BaseModel):
 
 
 class RegisterUserResponse(BaseModel):
-    user: RegisteredUser
+    email: str
+    verification_required: bool = True
+    expires_in_seconds: int
+    resend_after_seconds: int
+
+
+class VerifyEmailRequest(BaseModel):
+    email: str = Field(min_length=1, max_length=254)
+    code: str = Field(pattern=r"^[0-9]{6}$")
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return RegisterUserRequest.validate_hebron_email(value)
+
+
+class VerifyEmailResponse(BaseModel):
+    email: str
+    verified: bool = True
+
+
+class ResendVerificationRequest(BaseModel):
+    email: str = Field(min_length=1, max_length=254)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return RegisterUserRequest.validate_hebron_email(value)
+
+
+class ResendVerificationResponse(BaseModel):
+    email: str
+    expires_in_seconds: int
+    resend_after_seconds: int
