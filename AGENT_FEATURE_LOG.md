@@ -1367,3 +1367,59 @@ No frontend changes. The existing signup and verification pages consume the unch
 ### Notes
 
 The in-app browser control was unavailable in this session; the same deployed signup endpoint was exercised directly and the production database was inspected without exposing secrets or password hashes.
+
+## 2026-09-30 - Verify corrected signup in production
+
+### Request
+
+Confirm the reported email can register after the false-conflict fix and leave it ready for the user's real registration.
+
+### Changes
+
+- Submitted the complete production signup request for `22220013@students.hebron.edu` after deployment and received the expected verification-required response.
+- Deleted only the temporary test account afterward; foreign-key cascades removed its temporary profile and verification challenge so the user can register with their real fields and password.
+- Intentionally left application behavior unchanged after the verified fix.
+
+### Repositories
+
+- `inkfig-user-system`: recorded production verification and targeted test-data cleanup.
+
+### Files
+
+- `AGENT_FEATURE_LOG.md`: records the live result and cleanup.
+
+### API
+
+- `POST /api/v1/auth/signup`: production returned `201` with `verification_required: true`, a 600-second lifetime, and 60-second resend cooldown.
+
+### Database
+
+No migration required. One temporary test `user_accounts` row was deleted by exact email and its dependent test rows were cascade-deleted.
+
+### Permissions and scope
+
+- No permissions or roles changed.
+- Backend Hebron-email validation and mandatory email verification remain authoritative.
+
+### Frontend
+
+No frontend changes.
+
+### Verification
+
+- `[passed] production POST /api/v1/auth/signup` - returned `201` for the previously failing email.
+- `[passed] targeted database cleanup` - returned `DELETE 1` for the temporary test account.
+
+### Deployment
+
+No special deployment steps. The behavioral fix was already deployed successfully.
+
+### Git
+
+- Branch: `main`
+- Commit: this ticket's verification-log commit
+- Push: `successful`
+
+### Notes
+
+The verification email produced by the temporary test is intentionally invalid because its corresponding test challenge was removed. The user must submit the signup form again to receive the real code.
