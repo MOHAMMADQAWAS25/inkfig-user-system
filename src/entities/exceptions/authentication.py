@@ -12,3 +12,19 @@ class AccountInactiveError(AuthenticationError):
 
 class InvalidRefreshTokenError(AuthenticationError):
     """The refresh token is invalid, expired, or revoked."""
+
+
+class PasswordResetCodeInvalidError(AuthenticationError):
+    pass
+
+
+class PasswordResetCodeExpiredError(AuthenticationError):
+    pass
+
+
+class PasswordResetAttemptsExceededError(AuthenticationError):
+    pass
+
+
+class PasswordResetTokenInvalidError(AuthenticationError):
+    pass

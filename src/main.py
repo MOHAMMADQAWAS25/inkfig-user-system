@@ -5,6 +5,7 @@ from src.infrastructure.config.settings import get_settings
 from src.interface.api.routes.health import router as health_router
 from src.interface.api.routes.registration import router as registration_router
 from src.interface.api.routes.authentication import router as authentication_router
+from src.interface.api.routes.password_reset import router as password_reset_router
 
 
 def create_app() -> FastAPI:
@@ -21,6 +22,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router, prefix=settings.api_prefix)
     app.include_router(registration_router, prefix=settings.api_prefix)
     app.include_router(authentication_router, prefix=settings.api_prefix)
+    app.include_router(password_reset_router, prefix=settings.api_prefix)
     return app
 
 

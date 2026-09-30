@@ -1423,3 +1423,84 @@ No special deployment steps. The behavioral fix was already deployed successfull
 ### Notes
 
 The verification email produced by the temporary test is intentionally invalid because its corresponding test challenge was removed. The user must submit the signup form again to receive the real code.
+
+## 2026-09-30 - Reset forgotten passwords with an email code
+
+### Request
+
+Allow a user who forgot their password to request an email verification code, verify it, and securely choose a new password.
+
+### Changes
+
+- Added a three-step password-reset workflow: request code, verify code, and confirm a new password.
+- Returns the same request response for eligible and unknown accounts to reduce email-account enumeration.
+- Stores only HMAC hashes of six-digit codes and opaque reset tokens, enforces 10-minute lifetimes and five code attempts, and prevents code/token reuse.
+- Hashes the replacement password with the existing PBKDF2 implementation, increments the account token version, and revokes all active refresh tokens.
+- Sends an English Brevo reset email and HTML-escapes user-controlled names.
+- Existing signup, email verification, login, and logout behavior was intentionally left unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: added password-reset persistence, domain/application services, Brevo delivery, API endpoints, configuration, and tests.
+- `inkfig-user-FE`: consumes this API in the login recovery workflow; its changes are recorded in that repository.
+
+### Files
+
+- `migrations/20260930_004_add_password_reset.sql`: creates password-reset challenge storage.
+- `src/app/services/password_reset_service.py`: implements request, code verification, and password confirmation rules.
+- `src/entities/dto/authentication.py`: adds reset request and response DTOs.
+- `src/entities/repositories/password_reset.py`: defines reset persistence and email ports.
+- `src/infrastructure/repositories/password_reset_repository.py`: persists challenges, changes password hashes, and revokes sessions.
+- `src/infrastructure/integrations/brevo_email.py`: sends the English reset-code email.
+- `src/interface/api/routes/password_reset.py`: exposes the reset endpoints.
+- `src/interface/api/controllers/password_reset_controller.py`: delegates HTTP requests to the service.
+- `src/interface/dependencies/password_reset.py`: wires reset dependencies and configuration.
+- `src/infrastructure/config/settings.py`, `.env.example`, `template.yaml`: define reset lifetimes and attempt limits.
+- `tests/test_password_reset.py`: verifies security and workflow behavior.
+
+### API
+
+- `POST /api/v1/auth/password-reset/request`: accepts `email`, always returns a neutral accepted response for valid-format emails, and sends a code only for active verified accounts.
+- `POST /api/v1/auth/password-reset/verify`: accepts `email` and a six-digit `code`; returns a short-lived opaque `reset_token`; returns 400 for an invalid code, 410 for expiry, and 429 after five failed attempts.
+- `POST /api/v1/auth/password-reset/confirm`: accepts `email`, `reset_token`, `password`, and `password_confirmation`; validates matching 8-128 character passwords and returns 204 after changing the password.
+
+### Database
+
+- Migration: `20260930_004_add_password_reset.sql`
+- Adds `password_reset_codes` with an account foreign key, hashed code/token fields, expiry timestamps, attempt constraints, verification/consumption/invalidation timestamps, a unique token hash, pending and expiry indexes, RLS, and service-role access.
+- Rollback requires dropping `public.password_reset_codes`; no existing account data is rewritten.
+
+### Permissions and scope
+
+- No authenticated permission is required because password recovery must be public.
+- Only active, email-verified InkFig accounts can receive a reset challenge.
+- Account eligibility, code validity, token validity, password replacement, and session revocation are validated by the backend.
+
+### Frontend
+
+No frontend changes in this repository. The corresponding localized page and login link are in `inkfig-user-FE`.
+
+### Verification
+
+- `[passed] py -3.12 -m pytest -q` - 37 tests passed.
+- `[passed] py -3.12 -m mypy src tests` - no issues in 62 files.
+- `[passed] py -3.12 -m compileall -q src tests`
+- `[passed] sam validate --lint`
+- `[passed] sam build`
+- `[passed] git diff --check`
+
+### Deployment
+
+- Deploy `inkfig-user-system`; the existing workflow must run migration 004 before the Lambda deployment.
+- Deploy `inkfig-user-FE` after the backend succeeds.
+- Existing Brevo and JWT secrets are reused; no new secret is required. Optional reset TTL/attempt environment values have defaults in the SAM template.
+
+### Git
+
+- Branch: `main`
+- Commit: this ticket's focused commit
+- Push: `successful`
+
+### Notes
+
+Requesting another reset code invalidates any earlier unconsumed challenge. Successful reset revokes refresh tokens, while already-issued short-lived access tokens also become invalid because the account token version is incremented.
