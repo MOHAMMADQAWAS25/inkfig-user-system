@@ -1,5 +1,3 @@
-from html import escape
-
 import httpx
 
 from src.entities.exceptions.registration import EmailDeliveryError
@@ -31,6 +29,7 @@ class BrevoVerificationEmailGateway:
                 "full_name": full_name,
                 "verification_code": code,
                 "expires_minutes": expires_minutes,
+                "code_purpose": "complete your InkFig registration",
             },
         }
         try:
@@ -50,18 +49,17 @@ class BrevoVerificationEmailGateway:
     async def send_password_reset_code(
         self, email: str, full_name: str, code: str, expires_minutes: int
     ) -> None:
-        safe_name = escape(full_name)
         payload = {
             "sender": {"email": self._sender_email, "name": self._sender_name},
             "to": [{"email": email, "name": full_name}],
+            "templateId": self._template_id,
             "subject": "Your InkFig password reset code",
-            "htmlContent": (
-                f"<p>Hello {safe_name},</p>"
-                "<p>Use this code to reset your InkFig password:</p>"
-                f"<p style='font-size:28px;font-weight:700;letter-spacing:6px'>{code}</p>"
-                f"<p>This code expires in {expires_minutes} minutes.</p>"
-                "<p>If you did not request this reset, you can ignore this email.</p>"
-            ),
+            "params": {
+                "full_name": full_name,
+                "verification_code": code,
+                "expires_minutes": expires_minutes,
+                "code_purpose": "reset your InkFig password",
+            },
         }
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:

@@ -1504,3 +1504,65 @@ No frontend changes in this repository. The corresponding localized page and log
 ### Notes
 
 Requesting another reset code invalidates any earlier unconsumed challenge. Successful reset revokes refresh tokens, while already-issued short-lived access tokens also become invalid because the account token version is incremented.
+
+## 2026-09-30 - Reuse the verification email template for password resets
+
+### Request
+
+Send password-reset codes with the same branded Brevo template used for signup email verification.
+
+### Changes
+
+- Replaced the reset email's inline HTML with the configured shared Brevo template ID.
+- Added a `code_purpose` template parameter so signup and password-reset messages can display context-appropriate wording in the same design.
+- Overrides the reset message subject with `Your InkFig password reset code`.
+- Existing code generation, expiry, attempt limits, account eligibility, and password-reset behavior were intentionally left unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: changed Brevo payload construction and added regression coverage.
+
+### Files
+
+- `src/infrastructure/integrations/brevo_email.py`: uses one template for both code-email purposes.
+- `tests/test_brevo_email.py`: verifies both messages use the same template and that reset no longer sends inline HTML.
+
+### API
+
+No API changes.
+
+### Database
+
+No migration required.
+
+### Permissions and scope
+
+- No permissions, roles, or access scopes changed.
+- Signup and password-reset eligibility continue to be validated by the backend.
+
+### Frontend
+
+No frontend changes.
+
+### Verification
+
+- `[passed] py -3.12 -m pytest -q` - 38 tests passed.
+- `[passed] py -3.12 -m mypy src tests` - no issues in 63 files.
+- `[passed] py -3.12 -m compileall -q src tests`
+- `[passed] git diff --check`
+
+### Deployment
+
+- Deploy `inkfig-user-system` through the existing AWS workflow.
+- No migration or new environment variable is required.
+- Update the existing Brevo template sentence to use `{{ params.code_purpose }}` so its wording matches signup and reset messages.
+
+### Git
+
+- Branch: `main`
+- Commit: this ticket's focused commit
+- Push: `successful`
+
+### Notes
+
+The shared Brevo template should say `Use the verification code below to {{ params.code_purpose }}:`. Existing `full_name`, `verification_code`, and `expires_minutes` parameters remain available.
