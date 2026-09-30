@@ -11,6 +11,9 @@ from src.infrastructure.security.passwords import Pbkdf2PasswordHasher
 from src.infrastructure.repositories.user_profile_repository import (
     SqlAlchemyUserProfileRepository,
 )
+from src.infrastructure.repositories.email_code_rate_limit_repository import (
+    SqlAlchemyEmailCodeRateLimitRepository,
+)
 from src.interface.api.controllers.registration_controller import RegistrationController
 
 
@@ -31,6 +34,9 @@ def get_registration_service(
         code_ttl_minutes=settings.verification_code_ttl_minutes,
         max_attempts=settings.verification_max_attempts,
         resend_cooldown_seconds=settings.verification_resend_cooldown_seconds,
+        rate_limit_repository=SqlAlchemyEmailCodeRateLimitRepository(session),
+        max_sends_per_hour=settings.email_code_max_sends_per_hour,
+        hourly_block_seconds=settings.email_code_hourly_block_seconds,
     )
 
 

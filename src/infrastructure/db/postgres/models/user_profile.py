@@ -98,3 +98,16 @@ class PasswordResetCodeModel(Base):
     sent_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class EmailCodeRateLimitModel(Base):
+    __tablename__ = "email_code_rate_limits"
+
+    scope: Mapped[str] = mapped_column(String(32), primary_key=True)
+    identifier_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    send_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    blocked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )

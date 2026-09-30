@@ -12,6 +12,8 @@ from src.entities.dto.registration import (
     RegisterUserRequest,
     UserProfileCreate,
 )
+from src.entities.dto.email_code_rate_limit import EmailCodeRateDecision
+from src.entities.exceptions.email_code_rate_limit import EmailCodeRateLimitExceededError
 from src.entities.enums.gender import Gender
 from src.entities.exceptions.registration import (
     VerificationCodeExpiredError,
@@ -197,6 +199,28 @@ class FakeEmailGateway:
         self.code = code
 
 
+class FakeRateLimitRepository:
+    def __init__(self, decisions: list[EmailCodeRateDecision]) -> None:
+        self.decisions = decisions
+        self.identifiers: list[str] = []
+
+    async def reserve_send(
+        self,
+        scope: str,
+        identifier_hash: str,
+        now: datetime,
+        cooldown_seconds: int,
+        max_sends: int,
+        block_seconds: int,
+    ) -> EmailCodeRateDecision:
+        assert scope == "registration"
+        assert len(identifier_hash) == 64
+        assert max_sends == 5
+        assert block_seconds == 3600
+        self.identifiers.append(identifier_hash)
+        return self.decisions.pop(0)
+
+
 @pytest.mark.asyncio
 async def test_registration_creates_auth_user_and_profile() -> None:
     repository = FakeProfileRepository()
@@ -304,3 +328,56 @@ async def test_expired_code_is_rejected() -> None:
 
     with pytest.raises(VerificationCodeExpiredError):
         await service.verify_email(registration_request().email, "000000")
+
+
+@pytest.mark.asyncio
+async def test_fifth_registration_code_starts_one_hour_lock() -> None:
+    repository = FakeProfileRepository()
+    rate_limit = FakeRateLimitRepository(
+        [
+            EmailCodeRateDecision(
+                allowed=True,
+                retry_after_seconds=3600,
+                hourly_limit_reached=True,
+            )
+        ]
+    )
+    service = RegistrationService(
+        repository,
+        FakeEmailGateway(),
+        FakePasswordHasher(),
+        "test-secret",
+        rate_limit_repository=rate_limit,
+    )
+
+    response = await service.register(registration_request())
+
+    assert response.hourly_limit_reached is True
+    assert response.resend_after_seconds == 3600
+
+
+@pytest.mark.asyncio
+async def test_registration_email_is_not_sent_during_hourly_lock() -> None:
+    rate_limit = FakeRateLimitRepository(
+        [
+            EmailCodeRateDecision(
+                allowed=False,
+                retry_after_seconds=2400,
+                hourly_limit_reached=True,
+            )
+        ]
+    )
+    email_gateway = FakeEmailGateway()
+    service = RegistrationService(
+        FakeProfileRepository(),
+        email_gateway,
+        FakePasswordHasher(),
+        "test-secret",
+        rate_limit_repository=rate_limit,
+    )
+
+    with pytest.raises(EmailCodeRateLimitExceededError) as error:
+        await service.register(registration_request())
+
+    assert error.value.retry_after_seconds == 2400
+    assert email_gateway.code == ""

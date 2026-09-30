@@ -57,6 +57,8 @@ class PasswordResetRequest(BaseModel):
 class PasswordResetRequestResponse(BaseModel):
     message: str = "If the account exists, a reset code has been sent."
     expires_in_seconds: int = 600
+    resend_after_seconds: int = 60
+    hourly_limit_reached: bool = False
 
 
 class PasswordResetVerifyRequest(PasswordResetRequest):

@@ -112,6 +112,7 @@ class RegisterUserResponse(BaseModel):
     verification_required: bool = True
     expires_in_seconds: int
     resend_after_seconds: int
+    hourly_limit_reached: bool = False
 
 
 class VerifyEmailRequest(BaseModel):
@@ -142,3 +143,4 @@ class ResendVerificationResponse(BaseModel):
     email: str
     expires_in_seconds: int
     resend_after_seconds: int
+    hourly_limit_reached: bool = False

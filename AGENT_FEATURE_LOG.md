@@ -1566,3 +1566,86 @@ No frontend changes.
 ### Notes
 
 The shared Brevo template should say `Use the verification code below to {{ params.code_purpose }}:`. Existing `full_name`, `verification_code`, and `expires_minutes` parameters remain available.
+
+## 2026-09-30 - Limit verification-code emails to five per hour
+
+### Request
+
+Limit registration and password-reset code emails to five, then prevent another code for one hour and explain the lock to the user.
+
+### Changes
+
+- Added a shared database-backed limiter for registration and password-reset emails.
+- Allows one send every 60 seconds; the fifth code is delivered and starts a one-hour lock.
+- During the lock, no code is generated, no active challenge is replaced, and no email is sent.
+- Uses HMAC email identifiers rather than storing additional plaintext email addresses.
+- Uses a PostgreSQL transaction advisory lock so concurrent Lambda requests cannot bypass the counter.
+- Applies password-reset tracking to unknown addresses as well, preserving the neutral response and preventing account discovery.
+- Existing code expiry, five incorrect-code attempts, verification, and password-reset authorization were intentionally left unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: added persistent rate limiting, API response metadata, configuration, migration, and tests.
+- `inkfig-user-FE`: displays the lock message and countdown; its changes are recorded in that repository.
+
+### Files
+
+- `migrations/20260930_005_add_email_code_rate_limits.sql`: creates hashed per-purpose rate-limit state.
+- `src/entities/dto/email_code_rate_limit.py`: defines limiter decisions.
+- `src/entities/repositories/email_code_rate_limit.py`: defines the persistence port.
+- `src/entities/exceptions/email_code_rate_limit.py`: carries hourly retry information.
+- `src/infrastructure/repositories/email_code_rate_limit_repository.py`: atomically reserves email sends.
+- `src/infrastructure/db/postgres/models/user_profile.py`: maps the rate-limit table.
+- `src/app/services/registration_service.py`: applies limits to signup and resend emails.
+- `src/app/services/password_reset_service.py`: applies neutral limits to reset requests.
+- `src/entities/dto/registration.py`, `src/entities/dto/authentication.py`: expose resend delay and hourly-lock state.
+- `src/interface/api/routes/registration.py`: returns 429 and `Retry-After` for a locked verification email.
+- `src/infrastructure/config/settings.py`, `.env.example`, `template.yaml`: configure five sends and the one-hour block.
+- `tests/test_registration.py`, `tests/test_password_reset.py`: verify fifth-send and locked-send behavior.
+
+### API
+
+- `POST /api/v1/auth/signup`: response adds `hourly_limit_reached`; returns 429 with `Retry-After` when the email is already locked.
+- `POST /api/v1/auth/resend-verification`: response adds `hourly_limit_reached`; the fifth send returns a 3600-second delay, while locked requests return 429.
+- `POST /api/v1/auth/password-reset/request`: response adds `resend_after_seconds` and `hourly_limit_reached`; it continues returning neutral 202 responses for unknown, ineligible, cooldown-limited, and hourly-limited emails.
+
+### Database
+
+- Migration: `20260930_005_add_email_code_rate_limits.sql`
+- Adds `email_code_rate_limits` with composite purpose/hash primary key, nonnegative send counter, last-send and blocked-until timestamps, a partial block-expiry index, RLS, and service-role-only access.
+- Existing users and challenges require no backfill. Rollback drops only the limiter table and removes enforcement state.
+
+### Permissions and scope
+
+- No authenticated permission is required for public registration or password recovery.
+- Limits are isolated by normalized email and purpose, so registration and password reset have independent counters.
+- Eligibility, resend limits, challenge creation, and email delivery decisions are backend-enforced.
+
+### Frontend
+
+No frontend changes in this repository. The frontend consumes the new delay and lock fields.
+
+### Verification
+
+- `[passed] py -3.12 -m pytest -q` - 41 tests passed.
+- `[passed] py -3.12 -m mypy src tests` - no issues in 67 files.
+- `[passed] py -3.12 -m compileall -q src tests`
+- `[passed] sam validate --lint`
+- `[passed] sam build`
+- `[passed] git diff --check`
+
+### Deployment
+
+- Deploy `inkfig-user-system`; migration 005 must run before the Lambda update.
+- Deploy `inkfig-user-FE` after the backend succeeds.
+- No new secrets are required; SAM supplies defaults of five sends and a 3600-second block.
+
+### Git
+
+- Branch: `main`
+- Commit: this ticket's focused commit
+- Push: `successful`
+
+### Notes
+
+The hour begins when the fifth code is issued. After it expires, the counter resets. AWS WAF/IP throttling remains a complementary future defense against distributed abuse.

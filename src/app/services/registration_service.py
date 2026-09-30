@@ -4,6 +4,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
+from src.entities.dto.email_code_rate_limit import EmailCodeRateDecision
 from src.entities.dto.registration import (
     EmailVerificationCreate,
     PendingEmailVerification,
@@ -13,6 +14,7 @@ from src.entities.dto.registration import (
     UserProfileCreate,
     VerifyEmailResponse,
 )
+from src.entities.exceptions.email_code_rate_limit import EmailCodeRateLimitExceededError
 from src.entities.exceptions.registration import (
     VerificationAttemptsExceededError,
     VerificationCodeExpiredError,
@@ -20,6 +22,7 @@ from src.entities.exceptions.registration import (
     VerificationNotFoundError,
     VerificationResendTooSoonError,
 )
+from src.entities.repositories.email_code_rate_limit import EmailCodeRateLimitRepository
 from src.entities.repositories.registration import (
     PasswordHasher,
     UserProfileRepository,
@@ -37,6 +40,9 @@ class RegistrationService:
         code_ttl_minutes: int = 10,
         max_attempts: int = 5,
         resend_cooldown_seconds: int = 60,
+        rate_limit_repository: EmailCodeRateLimitRepository | None = None,
+        max_sends_per_hour: int = 5,
+        hourly_block_seconds: int = 3600,
     ) -> None:
         if not hash_secret:
             raise RuntimeError("A verification hash secret is required.")
@@ -47,6 +53,9 @@ class RegistrationService:
         self._code_ttl_minutes = code_ttl_minutes
         self._max_attempts = max_attempts
         self._resend_cooldown_seconds = resend_cooldown_seconds
+        self._rate_limit_repository = rate_limit_repository
+        self._max_sends_per_hour = max_sends_per_hour
+        self._hourly_block_seconds = hourly_block_seconds
 
     async def register(self, request: RegisterUserRequest) -> RegisterUserResponse:
         pending = await self._profile_repository.get_pending_verification(request.email)
@@ -58,6 +67,7 @@ class RegistrationService:
         user_id = legacy_user_id or UUID(bytes=secrets.token_bytes(16), version=4)
         code = self._generate_code()
         verification = self._new_verification(user_id, code)
+        rate = await self._reserve_email_send(request.email)
         profile = UserProfileCreate(
             user_id=user_id,
             password_hash=self._password_hasher.hash(request.password),
@@ -80,7 +90,8 @@ class RegistrationService:
         return RegisterUserResponse(
             email=request.email,
             expires_in_seconds=self._code_ttl_minutes * 60,
-            resend_after_seconds=self._resend_cooldown_seconds,
+            resend_after_seconds=rate.retry_after_seconds,
+            hourly_limit_reached=rate.hourly_limit_reached,
         )
 
     async def _resume_pending_registration(
@@ -91,6 +102,7 @@ class RegistrationService:
             seconds=self._resend_cooldown_seconds
         )
         if resend_available_at <= now:
+            rate = await self._reserve_email_send(challenge.email)
             code = self._generate_code()
             verification = self._new_verification(challenge.user_id, code)
             await self._email_gateway.send_verification_code(
@@ -100,16 +112,19 @@ class RegistrationService:
                 challenge.verification_id, verification
             )
             expires_in_seconds = self._code_ttl_minutes * 60
-            resend_after_seconds = self._resend_cooldown_seconds
+            resend_after_seconds = rate.retry_after_seconds
+            hourly_limit_reached = rate.hourly_limit_reached
         else:
             expires_in_seconds = max(0, int((challenge.expires_at - now).total_seconds()))
             resend_after_seconds = max(
                 0, int((resend_available_at - now).total_seconds())
             )
+            hourly_limit_reached = False
         return RegisterUserResponse(
             email=challenge.email,
             expires_in_seconds=expires_in_seconds,
             resend_after_seconds=resend_after_seconds,
+            hourly_limit_reached=hourly_limit_reached,
         )
 
     async def verify_email(self, email: str, code: str) -> VerifyEmailResponse:
@@ -138,6 +153,7 @@ class RegistrationService:
         now = datetime.now(timezone.utc)
         if challenge.sent_at + timedelta(seconds=self._resend_cooldown_seconds) > now:
             raise VerificationResendTooSoonError
+        rate = await self._reserve_email_send(challenge.email)
         code = self._generate_code()
         verification = self._new_verification(challenge.user_id, code)
         await self._email_gateway.send_verification_code(
@@ -149,8 +165,34 @@ class RegistrationService:
         return ResendVerificationResponse(
             email=email,
             expires_in_seconds=self._code_ttl_minutes * 60,
-            resend_after_seconds=self._resend_cooldown_seconds,
+            resend_after_seconds=rate.retry_after_seconds,
+            hourly_limit_reached=rate.hourly_limit_reached,
         )
+
+    async def _reserve_email_send(self, email: str) -> EmailCodeRateDecision:
+        if self._rate_limit_repository is None:
+            return EmailCodeRateDecision(
+                allowed=True,
+                retry_after_seconds=self._resend_cooldown_seconds,
+            )
+        now = datetime.now(timezone.utc)
+        decision = await self._rate_limit_repository.reserve_send(
+            "registration",
+            self._hash_identifier(email),
+            now,
+            self._resend_cooldown_seconds,
+            self._max_sends_per_hour,
+            self._hourly_block_seconds,
+        )
+        if not decision.allowed:
+            if decision.hourly_limit_reached:
+                raise EmailCodeRateLimitExceededError(decision.retry_after_seconds)
+            raise VerificationResendTooSoonError
+        return decision
+
+    def _hash_identifier(self, email: str) -> str:
+        message = f"inkfig-email-rate-limit:{email}".encode()
+        return hmac.new(self._hash_secret, message, hashlib.sha256).hexdigest()
 
     def _new_verification(self, user_id: UUID, code: str) -> EmailVerificationCreate:
         return EmailVerificationCreate(

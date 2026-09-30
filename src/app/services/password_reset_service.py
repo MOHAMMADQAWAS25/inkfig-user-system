@@ -7,6 +7,7 @@ from src.entities.dto.authentication import (
     PasswordResetRequestResponse,
     PasswordResetVerifyResponse,
 )
+from src.entities.dto.email_code_rate_limit import EmailCodeRateDecision
 from src.entities.exceptions.authentication import (
     PasswordResetAttemptsExceededError,
     PasswordResetCodeExpiredError,
@@ -14,6 +15,7 @@ from src.entities.exceptions.authentication import (
     PasswordResetTokenInvalidError,
 )
 from src.entities.repositories.authentication import AuthenticationRepository
+from src.entities.repositories.email_code_rate_limit import EmailCodeRateLimitRepository
 from src.entities.repositories.password_reset import (
     PasswordResetEmailGateway,
     PasswordResetRepository,
@@ -32,6 +34,10 @@ class PasswordResetService:
         code_ttl_minutes: int = 10,
         max_attempts: int = 5,
         reset_token_minutes: int = 10,
+        rate_limit_repository: EmailCodeRateLimitRepository | None = None,
+        resend_cooldown_seconds: int = 60,
+        max_sends_per_hour: int = 5,
+        hourly_block_seconds: int = 3600,
     ) -> None:
         if not secret:
             raise RuntimeError("JWT secret is required for password-reset tokens.")
@@ -43,11 +49,23 @@ class PasswordResetService:
         self._code_ttl_minutes = code_ttl_minutes
         self._max_attempts = max_attempts
         self._reset_token_minutes = reset_token_minutes
+        self._rate_limit_repository = rate_limit_repository
+        self._resend_cooldown_seconds = resend_cooldown_seconds
+        self._max_sends_per_hour = max_sends_per_hour
+        self._hourly_block_seconds = hourly_block_seconds
 
     async def request(self, email: str) -> PasswordResetRequestResponse:
+        rate = await self._reserve_email_send(email)
+        response = PasswordResetRequestResponse(
+            expires_in_seconds=self._code_ttl_minutes * 60,
+            resend_after_seconds=rate.retry_after_seconds,
+            hourly_limit_reached=rate.hourly_limit_reached,
+        )
+        if not rate.allowed:
+            return response
         user = await self._authentication_repository.find_user_by_email(email)
         if user is None or not user.is_active or user.email_verified_at is None:
-            return PasswordResetRequestResponse(expires_in_seconds=self._code_ttl_minutes * 60)
+            return response
         code = f"{secrets.randbelow(1_000_000):06d}"
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=self._code_ttl_minutes)
         await self._reset_repository.create_challenge(
@@ -57,7 +75,22 @@ class PasswordResetService:
         await self._email_gateway.send_password_reset_code(
             user.email, user.full_name, code, self._code_ttl_minutes
         )
-        return PasswordResetRequestResponse(expires_in_seconds=self._code_ttl_minutes * 60)
+        return response
+
+    async def _reserve_email_send(self, email: str) -> EmailCodeRateDecision:
+        if self._rate_limit_repository is None:
+            return EmailCodeRateDecision(
+                allowed=True,
+                retry_after_seconds=self._resend_cooldown_seconds,
+            )
+        return await self._rate_limit_repository.reserve_send(
+            "password-reset",
+            self._hash(f"rate-limit:{email}"),
+            datetime.now(timezone.utc),
+            self._resend_cooldown_seconds,
+            self._max_sends_per_hour,
+            self._hourly_block_seconds,
+        )
 
     async def verify(self, email: str, code: str) -> PasswordResetVerifyResponse:
         challenge = await self._reset_repository.get_pending(email)

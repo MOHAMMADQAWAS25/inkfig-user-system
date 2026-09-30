@@ -9,6 +9,9 @@ from src.infrastructure.db.postgres.session import get_database_session
 from src.infrastructure.integrations.brevo_email import BrevoVerificationEmailGateway
 from src.infrastructure.repositories.authentication_repository import SqlAlchemyAuthenticationRepository
 from src.infrastructure.repositories.password_reset_repository import SqlAlchemyPasswordResetRepository
+from src.infrastructure.repositories.email_code_rate_limit_repository import (
+    SqlAlchemyEmailCodeRateLimitRepository,
+)
 from src.infrastructure.security.passwords import Pbkdf2PasswordHasher
 from src.interface.api.controllers.password_reset_controller import PasswordResetController
 
@@ -28,6 +31,10 @@ def get_password_reset_service(
         settings.password_reset_code_ttl_minutes,
         settings.password_reset_max_attempts,
         settings.password_reset_token_ttl_minutes,
+        SqlAlchemyEmailCodeRateLimitRepository(session),
+        settings.verification_resend_cooldown_seconds,
+        settings.email_code_max_sends_per_hour,
+        settings.email_code_hourly_block_seconds,
     )
 
 

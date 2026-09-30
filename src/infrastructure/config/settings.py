@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     verification_code_ttl_minutes: int = 10
     verification_max_attempts: int = 5
     verification_resend_cooldown_seconds: int = 60
+    email_code_max_sends_per_hour: int = 5
+    email_code_hourly_block_seconds: int = 3600
     password_reset_code_ttl_minutes: int = 10
     password_reset_max_attempts: int = 5
     password_reset_token_ttl_minutes: int = 10

@@ -20,6 +20,7 @@ from src.entities.exceptions.registration import (
     VerificationNotFoundError,
     VerificationResendTooSoonError,
 )
+from src.entities.exceptions.email_code_rate_limit import EmailCodeRateLimitExceededError
 from src.interface.api.controllers.registration_controller import RegistrationController
 from src.interface.dependencies.registration import get_registration_controller
 
@@ -48,6 +49,12 @@ async def register_user(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Registration is temporarily unavailable.",
+        ) from error
+    except EmailCodeRateLimitExceededError as error:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Five verification codes were requested. Try again in one hour.",
+            headers={"Retry-After": str(error.retry_after_seconds)},
         ) from error
     except EmailDeliveryError as error:
         raise HTTPException(
@@ -84,6 +91,12 @@ async def resend_verification(
         return await controller.resend_verification(request)
     except VerificationResendTooSoonError as error:
         raise HTTPException(status_code=429, detail="Wait before requesting another code.") from error
+    except EmailCodeRateLimitExceededError as error:
+        raise HTTPException(
+            status_code=429,
+            detail="Five verification codes were requested. Try again in one hour.",
+            headers={"Retry-After": str(error.retry_after_seconds)},
+        ) from error
     except VerificationNotFoundError as error:
         raise HTTPException(status_code=404, detail="No pending verification was found.") from error
     except EmailDeliveryError as error:

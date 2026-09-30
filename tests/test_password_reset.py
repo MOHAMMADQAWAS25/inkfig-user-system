@@ -5,6 +5,7 @@ import pytest
 
 from src.app.services.password_reset_service import PasswordResetService
 from src.entities.dto.authentication import AuthenticatedUser, PasswordResetChallenge
+from src.entities.dto.email_code_rate_limit import EmailCodeRateDecision
 from src.entities.exceptions.authentication import (
     PasswordResetAttemptsExceededError,
     PasswordResetCodeExpiredError,
@@ -92,6 +93,25 @@ class FakeEmailGateway:
         self.messages.append((email, full_name, code, expires_minutes))
 
 
+class FakeRateLimitRepository:
+    def __init__(self, decision: EmailCodeRateDecision) -> None:
+        self.decision = decision
+        self.identifier_hash = ""
+
+    async def reserve_send(
+        self,
+        scope: str,
+        identifier_hash: str,
+        now: datetime,
+        cooldown_seconds: int,
+        max_sends: int,
+        block_seconds: int,
+    ) -> EmailCodeRateDecision:
+        assert scope == "password-reset"
+        self.identifier_hash = identifier_hash
+        return self.decision
+
+
 def make_user() -> AuthenticatedUser:
     return AuthenticatedUser(
         user_id=uuid4(),
@@ -174,3 +194,33 @@ async def test_invalid_reset_token_cannot_change_password() -> None:
     with pytest.raises(PasswordResetTokenInvalidError):
         await service.confirm(repository.email, "invalid-reset-token-value-123456", "new-password")
     assert repository.new_password_hash is None
+
+
+@pytest.mark.asyncio
+async def test_password_reset_hourly_lock_is_neutral_and_sends_no_email() -> None:
+    user = make_user()
+    repository = FakeResetRepository(user.email)
+    email_gateway = FakeEmailGateway()
+    rate_limit = FakeRateLimitRepository(
+        EmailCodeRateDecision(
+            allowed=False,
+            retry_after_seconds=1800,
+            hourly_limit_reached=True,
+        )
+    )
+    service = PasswordResetService(
+        FakeAuthenticationRepository(user),
+        repository,
+        email_gateway,
+        Pbkdf2PasswordHasher(),
+        SECRET,
+        rate_limit_repository=rate_limit,
+    )
+
+    response = await service.request(user.email)
+
+    assert response.message == "If the account exists, a reset code has been sent."
+    assert response.hourly_limit_reached is True
+    assert response.resend_after_seconds == 1800
+    assert len(rate_limit.identifier_hash) == 64
+    assert email_gateway.messages == []
