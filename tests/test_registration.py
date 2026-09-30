@@ -14,7 +14,6 @@ from src.entities.dto.registration import (
 )
 from src.entities.enums.gender import Gender
 from src.entities.exceptions.registration import (
-    EmailAlreadyRegisteredError,
     VerificationCodeExpiredError,
     VerificationCodeInvalidError,
 )
@@ -86,33 +85,12 @@ def test_registration_requires_every_field(field: str) -> None:
         RegisterUserRequest.model_validate(values)
 
 
-class FakeAuthGateway:
-    def __init__(
-        self,
-        email_already_registered: bool = False,
-        recover_unconfirmed_user: bool = False,
-    ) -> None:
-        self.user_id = uuid4()
-        self.email_already_registered = email_already_registered
-        self.recover_unconfirmed_user = recover_unconfirmed_user
-        self.deleted_user_id: UUID | None = None
-        self.confirmed_user_id: UUID | None = None
+class FakePasswordHasher:
+    def hash(self, password: str) -> str:
+        return f"hashed:{password}"
 
-    async def create_user(self, email: str, password: str) -> UUID:
-        if self.email_already_registered:
-            raise EmailAlreadyRegisteredError
-        return self.user_id
-
-    async def delete_user(self, user_id: UUID) -> None:
-        self.deleted_user_id = user_id
-
-    async def replace_unconfirmed_user(self, email: str, password: str) -> UUID | None:
-        if self.recover_unconfirmed_user:
-            return self.user_id
-        return None
-
-    async def confirm_email(self, user_id: UUID) -> None:
-        self.confirmed_user_id = user_id
+    def verify(self, password: str, encoded: str) -> bool:
+        return encoded == self.hash(password)
 
 
 class FakeProfileRepository:
@@ -202,10 +180,9 @@ class FakeEmailGateway:
 
 @pytest.mark.asyncio
 async def test_registration_creates_auth_user_and_profile() -> None:
-    auth_gateway = FakeAuthGateway()
     repository = FakeProfileRepository()
     email_gateway = FakeEmailGateway()
-    service = RegistrationService(auth_gateway, repository, email_gateway, "test-secret")
+    service = RegistrationService(repository, email_gateway, FakePasswordHasher(), "test-secret")
 
     result = await service.register(registration_request())
 
@@ -217,24 +194,20 @@ async def test_registration_creates_auth_user_and_profile() -> None:
 
 
 @pytest.mark.asyncio
-async def test_registration_removes_auth_user_when_profile_creation_fails() -> None:
-    auth_gateway = FakeAuthGateway()
+async def test_registration_propagates_database_failure() -> None:
     service = RegistrationService(
-        auth_gateway, FailingProfileRepository(), FakeEmailGateway(), "test-secret"
+        FailingProfileRepository(), FakeEmailGateway(), FakePasswordHasher(), "test-secret"
     )
 
     with pytest.raises(RuntimeError, match="database failure"):
         await service.register(registration_request())
-
-    assert auth_gateway.deleted_user_id == auth_gateway.user_id
-
 
 @pytest.mark.asyncio
 async def test_registration_resumes_existing_pending_verification() -> None:
     repository = FakeProfileRepository()
     email_gateway = FakeEmailGateway()
     initial_service = RegistrationService(
-        FakeAuthGateway(), repository, email_gateway, "test-secret"
+        repository, email_gateway, FakePasswordHasher(), "test-secret"
     )
     await initial_service.register(registration_request())
     assert repository.challenge is not None
@@ -244,9 +217,9 @@ async def test_registration_resumes_existing_pending_verification() -> None:
         update={"sent_at": datetime(2020, 1, 1, tzinfo=timezone.utc)}
     )
     service = RegistrationService(
-        FakeAuthGateway(email_already_registered=True),
         repository,
         email_gateway,
+        FakePasswordHasher(),
         "test-secret",
     )
 
@@ -258,56 +231,22 @@ async def test_registration_resumes_existing_pending_verification() -> None:
 
 
 @pytest.mark.asyncio
-async def test_registration_keeps_conflict_for_completed_account() -> None:
-    service = RegistrationService(
-        FakeAuthGateway(email_already_registered=True),
-        FakeProfileRepository(),
-        FakeEmailGateway(),
-        "test-secret",
-    )
-
-    with pytest.raises(EmailAlreadyRegisteredError):
-        await service.register(registration_request())
-
-
-@pytest.mark.asyncio
-async def test_registration_recovers_unconfirmed_auth_user_without_profile() -> None:
-    auth_gateway = FakeAuthGateway(
-        email_already_registered=True, recover_unconfirmed_user=True
-    )
-    repository = FakeProfileRepository()
-    email_gateway = FakeEmailGateway()
-    service = RegistrationService(
-        auth_gateway, repository, email_gateway, "test-secret"
-    )
-
-    result = await service.register(registration_request())
-
-    assert result.verification_required is True
-    assert repository.challenge is not None
-    assert repository.challenge.user_id == auth_gateway.user_id
-    assert len(email_gateway.code) == 6
-
-
-@pytest.mark.asyncio
 async def test_correct_code_confirms_and_activates_account() -> None:
-    auth_gateway = FakeAuthGateway()
     repository = FakeProfileRepository()
     email_gateway = FakeEmailGateway()
-    service = RegistrationService(auth_gateway, repository, email_gateway, "test-secret")
+    service = RegistrationService(repository, email_gateway, FakePasswordHasher(), "test-secret")
     await service.register(registration_request())
 
     result = await service.verify_email(registration_request().email, email_gateway.code)
 
     assert result.verified is True
-    assert auth_gateway.confirmed_user_id == auth_gateway.user_id
     assert repository.activated is True
 
 
 @pytest.mark.asyncio
 async def test_incorrect_code_records_failed_attempt() -> None:
     repository = FakeProfileRepository()
-    service = RegistrationService(FakeAuthGateway(), repository, FakeEmailGateway(), "test-secret")
+    service = RegistrationService(repository, FakeEmailGateway(), FakePasswordHasher(), "test-secret")
     await service.register(registration_request())
 
     with pytest.raises(VerificationCodeInvalidError):
@@ -319,7 +258,7 @@ async def test_incorrect_code_records_failed_attempt() -> None:
 @pytest.mark.asyncio
 async def test_expired_code_is_rejected() -> None:
     repository = FakeProfileRepository()
-    service = RegistrationService(FakeAuthGateway(), repository, FakeEmailGateway(), "test-secret")
+    service = RegistrationService(repository, FakeEmailGateway(), FakePasswordHasher(), "test-secret")
     await service.register(registration_request())
     assert repository.challenge is not None
     repository.challenge = repository.challenge.model_copy(

@@ -14,13 +14,10 @@ Parameters:
   CorsOrigins:
     Type: String
     Description: JSON array of trusted frontend origins for FastAPI CORS.
-  SupabaseUrl:
-    Type: String
-    Description: Supabase project URL.
-  SupabaseSecretKey:
+  JwtSecret:
     Type: String
     NoEcho: true
-    Description: Backend-only Supabase secret key.
+    Description: Backend-only secret used to sign InkFig access tokens.
   DatabaseUrl:
     Type: String
     NoEcho: true
@@ -57,9 +54,11 @@ Globals:
         ENVIRONMENT: !Ref Environment
         API_PREFIX: /api/v1
         CORS_ORIGINS: !Ref CorsOrigins
-        SUPABASE_URL: !Ref SupabaseUrl
-        SUPABASE_SECRET_KEY: !Ref SupabaseSecretKey
         DATABASE_URL: !Ref DatabaseUrl
+        JWT_SECRET: !Ref JwtSecret
+        JWT_ISSUER: inkfig-user-system
+        ACCESS_TOKEN_MINUTES: 15
+        REFRESH_TOKEN_DAYS: 30
         BREVO_API_KEY: !Ref BrevoApiKey
         BREVO_SENDER_EMAIL: !Ref BrevoSenderEmail
         BREVO_SENDER_NAME: !Ref BrevoSenderName

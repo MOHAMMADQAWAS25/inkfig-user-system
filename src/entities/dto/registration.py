@@ -69,6 +69,7 @@ class RegisterUserRequest(BaseModel):
 
 class UserProfileCreate(BaseModel):
     user_id: UUID
+    password_hash: str
     email: str
     full_name: str
     phone_number: str

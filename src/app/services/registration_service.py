@@ -14,7 +14,6 @@ from src.entities.dto.registration import (
     VerifyEmailResponse,
 )
 from src.entities.exceptions.registration import (
-    EmailAlreadyRegisteredError,
     VerificationAttemptsExceededError,
     VerificationCodeExpiredError,
     VerificationCodeInvalidError,
@@ -22,7 +21,7 @@ from src.entities.exceptions.registration import (
     VerificationResendTooSoonError,
 )
 from src.entities.repositories.registration import (
-    AuthUserGateway,
+    PasswordHasher,
     UserProfileRepository,
     VerificationEmailGateway,
 )
@@ -31,9 +30,9 @@ from src.entities.repositories.registration import (
 class RegistrationService:
     def __init__(
         self,
-        auth_gateway: AuthUserGateway,
         profile_repository: UserProfileRepository,
         email_gateway: VerificationEmailGateway,
+        password_hasher: PasswordHasher,
         hash_secret: str,
         code_ttl_minutes: int = 10,
         max_attempts: int = 5,
@@ -41,33 +40,26 @@ class RegistrationService:
     ) -> None:
         if not hash_secret:
             raise RuntimeError("A verification hash secret is required.")
-        self._auth_gateway = auth_gateway
         self._profile_repository = profile_repository
         self._email_gateway = email_gateway
+        self._password_hasher = password_hasher
         self._hash_secret = hash_secret.encode()
         self._code_ttl_minutes = code_ttl_minutes
         self._max_attempts = max_attempts
         self._resend_cooldown_seconds = resend_cooldown_seconds
 
     async def register(self, request: RegisterUserRequest) -> RegisterUserResponse:
-        try:
-            user_id = await self._auth_gateway.create_user(request.email, request.password)
-        except EmailAlreadyRegisteredError:
-            pending = await self._profile_repository.get_pending_verification(request.email)
-            if pending is not None:
-                return await self._resume_pending_registration(pending)
-            recovered_user_id = await self._auth_gateway.replace_unconfirmed_user(
-                request.email, request.password
-            )
-            if recovered_user_id is None:
-                raise
-            user_id = recovered_user_id
+        pending = await self._profile_repository.get_pending_verification(request.email)
+        if pending is not None:
+            return await self._resume_pending_registration(pending)
+        user_id = UUID(bytes=secrets.token_bytes(16), version=4)
         code = self._generate_code()
         verification = self._new_verification(user_id, code)
         try:
             await self._profile_repository.create_pending(
                 UserProfileCreate(
                     user_id=user_id,
+                    password_hash=self._password_hasher.hash(request.password),
                     email=request.email,
                     full_name=request.full_name,
                     phone_number=request.phone_number,
@@ -80,7 +72,6 @@ class RegistrationService:
                 request.email, request.full_name, code, self._code_ttl_minutes
             )
         except Exception:
-            await self._auth_gateway.delete_user(user_id)
             raise
         return RegisterUserResponse(
             email=request.email,
@@ -131,7 +122,6 @@ class RegistrationService:
             if challenge.attempts + 1 >= challenge.max_attempts:
                 raise VerificationAttemptsExceededError
             raise VerificationCodeInvalidError
-        await self._auth_gateway.confirm_email(challenge.user_id)
         await self._profile_repository.activate_verified_user(
             challenge.verification_id, challenge.user_id, now
         )
