@@ -1075,3 +1075,67 @@ No frontend change is required. The existing signup success path proceeds to the
 ### Notes
 
 The retry intentionally keeps the password from the original pending registration; changing an existing identity's password through a public signup retry would be unsafe.
+
+## 2026-09-30 - Recover orphaned unconfirmed Supabase signup identities
+
+### Request
+
+Fix signup still returning `409` for `22220013@students.hebron.edu` when no matching account appears in the application profile table.
+
+### Changes
+
+- Added recovery for an unconfirmed Supabase Auth identity that has no matching pending application profile.
+- The backend locates the exact normalized Auth email, refuses recovery when the identity is confirmed, and replaces only an unconfirmed orphan before recreating the normal pending profile and verification challenge.
+- Preserved pending-profile resume behavior and completed-account duplicate protection.
+- Kept network clients request-scoped and generated identity, code, and timestamp state during the request for future Lambda SnapStart compatibility.
+
+### Repositories
+
+- `inkfig-user-system`: added orphaned Auth identity recovery and regression coverage.
+- `inkfig-main-system`: no changes required.
+- `inkfig-user-FE`: no changes required because the signup contract is unchanged.
+
+### Files
+
+- `src/entities/repositories/registration.py`: extends the Auth gateway contract with safe unconfirmed-user replacement.
+- `src/infrastructure/integrations/supabase_auth.py`: finds an exact Auth user and replaces it only when unconfirmed.
+- `src/app/services/registration_service.py`: invokes orphan recovery only when no pending profile exists.
+- `tests/test_registration.py`: verifies recovery creates the normal pending verification flow.
+- `AGENT_FEATURE_LOG.md`: records this ticket.
+
+### API
+
+- `POST /api/v1/auth/signup`: an unconfirmed Supabase identity without a profile can now restart registration and receive the existing `201` verification response.
+- Confirmed identities continue to return `409`; request and response fields are unchanged.
+
+### Database
+
+No migration required.
+
+### Permissions and scope
+
+- Recovery applies only to the exact normalized email and only when Supabase reports that it is unconfirmed and no pending application profile exists.
+- The user must still prove mailbox ownership using the newly issued verification code.
+- Confirmed identities and active profiles cannot be replaced through public signup.
+
+### Frontend
+
+No frontend changes. The existing successful-signup path continues to the verification screen.
+
+### Verification
+
+- `[passed] py -3.13 -m pytest -p no:cacheprovider` - 29 tests passed.
+- `[passed] py -3.13 -m mypy src tests` - no issues in 45 source files.
+- `[passed] py -3.13 -m compileall -q src tests migrations` using a workspace bytecode cache.
+- `[passed] git diff --check`
+- `[failed] initial verification run` - a misplaced response-parsing block caused an indentation error; it was corrected before the full suite passed.
+- `[not run] production Auth lookup` - this checkout has no production `.env`; no credentials were exposed or added.
+
+### Deployment
+
+- Push `inkfig-user-system` directly to `main` to run tests, migrations, SAM build, AWS deployment, and the production health check.
+- No migration, new secret, environment variable, frontend deployment, or deployment-order change is required.
+
+### Notes
+
+Supabase Auth identities are stored separately from `public.user_profiles`, so an orphan can exist even when the application table contains no matching email.

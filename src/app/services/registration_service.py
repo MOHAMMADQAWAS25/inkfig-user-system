@@ -54,9 +54,14 @@ class RegistrationService:
             user_id = await self._auth_gateway.create_user(request.email, request.password)
         except EmailAlreadyRegisteredError:
             pending = await self._profile_repository.get_pending_verification(request.email)
-            if pending is None:
+            if pending is not None:
+                return await self._resume_pending_registration(pending)
+            recovered_user_id = await self._auth_gateway.replace_unconfirmed_user(
+                request.email, request.password
+            )
+            if recovered_user_id is None:
                 raise
-            return await self._resume_pending_registration(pending)
+            user_id = recovered_user_id
         code = self._generate_code()
         verification = self._new_verification(user_id, code)
         try:

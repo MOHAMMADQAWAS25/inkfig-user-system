@@ -87,9 +87,14 @@ def test_registration_requires_every_field(field: str) -> None:
 
 
 class FakeAuthGateway:
-    def __init__(self, email_already_registered: bool = False) -> None:
+    def __init__(
+        self,
+        email_already_registered: bool = False,
+        recover_unconfirmed_user: bool = False,
+    ) -> None:
         self.user_id = uuid4()
         self.email_already_registered = email_already_registered
+        self.recover_unconfirmed_user = recover_unconfirmed_user
         self.deleted_user_id: UUID | None = None
         self.confirmed_user_id: UUID | None = None
 
@@ -100,6 +105,11 @@ class FakeAuthGateway:
 
     async def delete_user(self, user_id: UUID) -> None:
         self.deleted_user_id = user_id
+
+    async def replace_unconfirmed_user(self, email: str, password: str) -> UUID | None:
+        if self.recover_unconfirmed_user:
+            return self.user_id
+        return None
 
     async def confirm_email(self, user_id: UUID) -> None:
         self.confirmed_user_id = user_id
@@ -258,6 +268,25 @@ async def test_registration_keeps_conflict_for_completed_account() -> None:
 
     with pytest.raises(EmailAlreadyRegisteredError):
         await service.register(registration_request())
+
+
+@pytest.mark.asyncio
+async def test_registration_recovers_unconfirmed_auth_user_without_profile() -> None:
+    auth_gateway = FakeAuthGateway(
+        email_already_registered=True, recover_unconfirmed_user=True
+    )
+    repository = FakeProfileRepository()
+    email_gateway = FakeEmailGateway()
+    service = RegistrationService(
+        auth_gateway, repository, email_gateway, "test-secret"
+    )
+
+    result = await service.register(registration_request())
+
+    assert result.verification_required is True
+    assert repository.challenge is not None
+    assert repository.challenge.user_id == auth_gateway.user_id
+    assert len(email_gateway.code) == 6
 
 
 @pytest.mark.asyncio

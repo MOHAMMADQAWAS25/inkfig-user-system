@@ -38,7 +38,43 @@ class SupabaseAuthGateway:
         try:
             return UUID(response.json()["id"])
         except (KeyError, TypeError, ValueError) as error:
-            raise RegistrationProviderError("Supabase returned an invalid user response.") from error
+            raise RegistrationProviderError(
+                "Supabase returned an invalid user response."
+            ) from error
+
+    async def replace_unconfirmed_user(self, email: str, password: str) -> UUID | None:
+        existing_user = await self._find_user_by_email(email)
+        if existing_user is None or existing_user.get("email_confirmed_at") is not None:
+            return None
+        user_id = existing_user.get("id")
+        if not isinstance(user_id, str):
+            raise RegistrationProviderError("Supabase returned an invalid user response.")
+        await self.delete_user(UUID(user_id))
+        return await self.create_user(email, password)
+
+    async def _find_user_by_email(self, email: str) -> dict[str, object] | None:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                for page in range(1, 51):
+                    response = await client.get(
+                        f"{self._base_url}/auth/v1/admin/users",
+                        headers=self._headers,
+                        params={"page": page, "per_page": 100},
+                    )
+                    if response.status_code != 200:
+                        raise RegistrationProviderError(
+                            "Supabase user lookup failed with status "
+                            f"{response.status_code}."
+                        )
+                    users = response.json().get("users", [])
+                    for user in users:
+                        if str(user.get("email", "")).lower() == email.lower():
+                            return user
+                    if len(users) < 100:
+                        return None
+        except httpx.RequestError as error:
+            raise RegistrationProviderError("Supabase user lookup was unreachable.") from error
+        raise RegistrationProviderError("Supabase user lookup exceeded its safe page limit.")
 
     async def delete_user(self, user_id: UUID) -> None:
         try:
