@@ -12,7 +12,10 @@ from src.entities.dto.registration import (
     UserProfileCreate,
 )
 from src.entities.enums.gender import Gender
-from src.entities.exceptions.registration import EmailAlreadyRegisteredError
+from src.entities.exceptions.registration import (
+    EmailAlreadyRegisteredError,
+    PhoneAlreadyRegisteredError,
+)
 from src.infrastructure.db.postgres.models.user_profile import (
     EmailVerificationCodeModel,
     RefreshTokenModel,
@@ -65,8 +68,8 @@ class SqlAlchemyUserProfileRepository:
             await self._session.refresh(model)
         except IntegrityError as error:
             await self._session.rollback()
-            if getattr(error.orig, "sqlstate", None) == "23505":
-                raise EmailAlreadyRegisteredError from error
+            if self._is_unique_violation(error):
+                self._raise_registration_conflict(error)
             raise
         return self._to_registered_user(model)
 
@@ -109,6 +112,21 @@ class SqlAlchemyUserProfileRepository:
             .values(attempts=EmailVerificationCodeModel.attempts + 1)
         )
         await self._session.commit()
+
+    @staticmethod
+    def _is_unique_violation(error: IntegrityError) -> bool:
+        original = error.orig
+        cause = getattr(original, "__cause__", None)
+        return getattr(original, "sqlstate", None) == "23505" or getattr(cause, "sqlstate", None) == "23505"
+
+    @staticmethod
+    def _raise_registration_conflict(error: IntegrityError) -> None:
+        original = error.orig
+        cause = getattr(original, "__cause__", None)
+        constraint = getattr(original, "constraint_name", None) or getattr(cause, "constraint_name", None) or ""
+        if constraint == "user_profiles_phone_number_unique_idx":
+            raise PhoneAlreadyRegisteredError from error
+        raise EmailAlreadyRegisteredError from error
 
     async def activate_verified_user(
         self, verification_id: UUID, user_id: UUID, verified_at: datetime
@@ -203,7 +221,13 @@ class SqlAlchemyUserProfileRepository:
                 max_attempts=verification.max_attempts,
             )
         )
-        await self._session.commit()
+        try:
+            await self._session.commit()
+        except IntegrityError as error:
+            await self._session.rollback()
+            if self._is_unique_violation(error):
+                self._raise_registration_conflict(error)
+            raise
 
     @staticmethod
     def _to_registered_user(model: UserProfileModel) -> RegisteredUser:

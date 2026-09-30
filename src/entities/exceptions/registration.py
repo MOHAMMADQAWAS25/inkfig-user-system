@@ -6,6 +6,10 @@ class EmailAlreadyRegisteredError(RegistrationError):
     """The supplied email already belongs to an account."""
 
 
+class PhoneAlreadyRegisteredError(RegistrationError):
+    """The supplied phone number already belongs to an account."""
+
+
 class RegistrationProviderError(RegistrationError):
     """The authentication provider could not complete registration."""
 

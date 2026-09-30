@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -10,6 +10,7 @@ from src.infrastructure.db.postgres.base import Base
 
 class UserProfileModel(Base):
     __tablename__ = "user_profiles"
+    __table_args__ = (Index("user_profiles_phone_number_unique_idx", "phone_number", unique=True),)
 
     user_id: Mapped[UUID] = mapped_column(
         PostgresUUID(as_uuid=True), ForeignKey("user_accounts.user_id", ondelete="CASCADE"), primary_key=True

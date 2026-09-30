@@ -1649,3 +1649,73 @@ No frontend changes in this repository. The frontend consumes the new delay and 
 ### Notes
 
 The hour begins when the fifth code is issued. After it expires, the counter resets. AWS WAF/IP throttling remains a complementary future defense against distributed abuse.
+
+## 2026-09-30 - Enforce unique registration phone numbers
+
+### Request
+
+Require both email addresses and phone numbers to be unique during signup and return a clear conflict for either field.
+
+### Changes
+
+- Added database-enforced phone-number uniqueness alongside the existing email constraints.
+- Maps PostgreSQL phone uniqueness violations to a dedicated domain error and HTTP 409 response.
+- Applies the same protection when restarting a migrated legacy account.
+- Existing email format, ten-digit phone validation, verification, login, and account scopes were intentionally unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: added the constraint, conflict mapping, migration, and API response.
+- `inkfig-user-FE`: displays the field-specific conflict and records its UI work separately.
+
+### Files
+
+- `migrations/20260930_006_add_unique_phone_number.sql`: creates the unique phone index.
+- `src/infrastructure/db/postgres/models/user_profile.py`: maps the named unique index.
+- `src/entities/exceptions/registration.py`: adds the phone conflict domain error.
+- `src/infrastructure/repositories/user_profile_repository.py`: classifies unique conflicts and safely rolls back.
+- `src/interface/api/routes/registration.py`: returns the phone-specific 409 response.
+
+### API
+
+- `POST /api/v1/auth/signup`: returns 409 with `An account with this phone number already exists.` when the normalized submitted phone is already stored; the existing email 409 remains unchanged.
+
+### Database
+
+- Migration: `20260930_006_add_unique_phone_number.sql`
+- Adds named unique index `user_profiles_phone_number_unique_idx` on `user_profiles.phone_number`; no backfill or default is required. Existing duplicates would prevent migration application. Rollback drops this index.
+
+### Permissions and scope
+
+- Signup remains public and requires no authenticated permission.
+- Uniqueness applies globally to every account, regardless of role.
+- Validation and conflict enforcement are performed by the backend and PostgreSQL.
+
+### Frontend
+
+No frontend changes in this repository.
+
+### Verification
+
+- `[passed] uv run --with-requirements requirements.txt pytest` - 41 tests passed.
+- `[passed] uv run --with-requirements requirements.txt mypy src tests`
+- `[passed] focused ruff check` - all changed backend Python files passed.
+- `[passed] migration runner` - migration 006 applied to the configured Supabase database.
+- `[failed] full ruff check` - pre-existing formatting and lint findings remain in unrelated files.
+- `[failed] sam validate --lint` - template validated, but SAM telemetry could not access its user metadata path in the sandbox.
+- `[passed] git diff --check`
+
+### Deployment
+
+- Deploy `inkfig-user-system`; migration 006 has already run before deployment.
+- No environment-variable or secret changes are required.
+
+### Git
+
+- Branch: `main`
+- Commit: this ticket's focused commit
+- Push: `successful`
+
+### Notes
+
+The unique index stores and compares the already validated ten-digit representation exactly.

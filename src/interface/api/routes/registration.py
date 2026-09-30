@@ -10,9 +10,13 @@ from src.entities.dto.registration import (
     VerifyEmailRequest,
     VerifyEmailResponse,
 )
+from src.entities.exceptions.email_code_rate_limit import (
+    EmailCodeRateLimitExceededError,
+)
 from src.entities.exceptions.registration import (
-    EmailDeliveryError,
     EmailAlreadyRegisteredError,
+    EmailDeliveryError,
+    PhoneAlreadyRegisteredError,
     RegistrationProviderError,
     VerificationAttemptsExceededError,
     VerificationCodeExpiredError,
@@ -20,7 +24,6 @@ from src.entities.exceptions.registration import (
     VerificationNotFoundError,
     VerificationResendTooSoonError,
 )
-from src.entities.exceptions.email_code_rate_limit import EmailCodeRateLimitExceededError
 from src.interface.api.controllers.registration_controller import RegistrationController
 from src.interface.dependencies.registration import get_registration_controller
 
@@ -49,6 +52,11 @@ async def register_user(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Registration is temporarily unavailable.",
+        ) from error
+    except PhoneAlreadyRegisteredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this phone number already exists.",
         ) from error
     except EmailCodeRateLimitExceededError as error:
         raise HTTPException(
