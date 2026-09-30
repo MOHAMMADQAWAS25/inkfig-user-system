@@ -57,13 +57,17 @@ class SqlAlchemyUserProfileRepository:
             expires_at=verification.expires_at,
             max_attempts=verification.max_attempts,
         )
-        self._session.add_all([account_model, model, code_model])
         try:
+            self._session.add(account_model)
+            await self._session.flush()
+            self._session.add_all([model, code_model])
             await self._session.commit()
             await self._session.refresh(model)
         except IntegrityError as error:
             await self._session.rollback()
-            raise EmailAlreadyRegisteredError from error
+            if getattr(error.orig, "sqlstate", None) == "23505":
+                raise EmailAlreadyRegisteredError from error
+            raise
         return self._to_registered_user(model)
 
     async def get_pending_verification(

@@ -1298,3 +1298,72 @@ No frontend changes. Successful recovery follows the existing localized verifica
 ### Notes
 
 Recovery deliberately reuses the migrated user ID so profiles and future references remain stable.
+
+## 2026-09-30 - Fix false duplicate-email response during new signup
+
+### Request
+
+Reproduce and resolve the persistent `409 An account with this email already exists` response for `22220013@students.hebron.edu` using production API and database diagnostics.
+
+### Changes
+
+- Confirmed through targeted production queries that the email had no InkFig account, profile, verification challenge, legacy public-user row, or Supabase Auth identity.
+- Reproduced the production `409` and then reproduced the underlying repository failure in a rolled-back ORM transaction.
+- Fixed creation ordering by flushing the new `user_accounts` row before inserting its dependent profile and verification challenge.
+- Restricted duplicate-email translation to PostgreSQL unique violations (`23505`); foreign-key and other integrity failures are no longer incorrectly reported as duplicate accounts.
+- Removed the temporary diagnostic script after verification and intentionally left frontend behavior unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: corrected transactional account creation and error classification.
+- `inkfig-user-FE`: no changes required.
+- `inkfig-main-system`: no changes required.
+
+### Files
+
+- `src/infrastructure/repositories/user_profile_repository.py`: enforces parent-before-child flush ordering and maps only unique violations to `EmailAlreadyRegisteredError`.
+- `AGENT_FEATURE_LOG.md`: records the diagnosis, fix, and verification.
+
+### API
+
+- `POST /api/v1/auth/signup`: genuinely new emails can now create their account/profile/challenge; `409` is returned only for actual unique conflicts. Request and successful response fields are unchanged.
+
+### Database
+
+No migration required. Existing foreign keys are correct; the defect was ORM flush ordering. All diagnostic inserts were transactionally rolled back and created no records.
+
+### Permissions and scope
+
+- Signup remains public and limited to validated Hebron University emails.
+- Email verification remains mandatory before activation.
+- Backend database constraints and error classification remain authoritative.
+
+### Frontend
+
+No frontend changes. The existing signup and verification pages consume the unchanged API contract.
+
+### Verification
+
+- `[passed] production read-only account-state queries` - no record existed in the five relevant locations for the reported email.
+- `[passed] production API reproduction` - confirmed the pre-fix `409`.
+- `[passed] rolled-back raw SQL insert` - schema accepted the complete account graph.
+- `[failed] initial rolled-back ORM flush` - exposed `email_verification_codes_user_id_fkey` because the child flushed first.
+- `[passed] corrected rolled-back ORM flush` - parent-first ordering succeeded without persisting data.
+- `[passed] py -3.12 -m pytest -q` - 32 tests passed.
+- `[passed] py -3.12 -m mypy src tests` - no issues in 55 source files.
+- `[passed] git diff --check`
+
+### Deployment
+
+- Deploy `inkfig-user-system` through the existing AWS workflow.
+- No migration, new secret, environment-variable, or frontend deployment is required.
+
+### Git
+
+- Branch: `main`
+- Commit: this ticket's focused commit
+- Push: `successful`
+
+### Notes
+
+The in-app browser control was unavailable in this session; the same deployed signup endpoint was exercised directly and the production database was inspected without exposing secrets or password hashes.
