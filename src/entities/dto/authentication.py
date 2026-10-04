@@ -37,6 +37,14 @@ class TokenResponse(BaseModel):
     permissions: list[str] = []
 
 
+class SessionResponse(BaseModel):
+    expires_in: int
+    user_id: UUID
+    email: str
+    full_name: str
+    permissions: list[str] = []
+
+
 class RefreshTokenRequest(BaseModel):
     refresh_token: str = Field(min_length=32, max_length=512)
 

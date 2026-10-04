@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     jwt_issuer: str = "inkfig-user-system"
     access_token_minutes: int = 15
     refresh_token_days: int = 30
+    access_cookie_name: str = "inkfig_access"
+    refresh_cookie_name: str = "inkfig_refresh"
+    cookie_domain: str | None = None
+    cookie_secure: bool = False
     brevo_api_key: str = ""
     brevo_sender_email: str = ""
     brevo_sender_name: str = "InkFig"

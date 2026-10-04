@@ -59,6 +59,10 @@ Globals:
         JWT_ISSUER: inkfig-user-system
         ACCESS_TOKEN_MINUTES: 15
         REFRESH_TOKEN_DAYS: 30
+        ACCESS_COOKIE_NAME: inkfig_access
+        REFRESH_COOKIE_NAME: inkfig_refresh
+        COOKIE_DOMAIN: inkfig-hu.com
+        COOKIE_SECURE: true
         BREVO_API_KEY: !Ref BrevoApiKey
         BREVO_SENDER_EMAIL: !Ref BrevoSenderEmail
         BREVO_SENDER_NAME: !Ref BrevoSenderName

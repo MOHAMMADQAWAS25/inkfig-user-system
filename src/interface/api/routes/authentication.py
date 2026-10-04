@@ -1,52 +1,85 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 
 from src.entities.dto.authentication import (
     LoginRequest,
-    LogoutRequest,
-    RefreshTokenRequest,
-    TokenResponse,
+    SessionResponse,
 )
 from src.entities.exceptions.authentication import (
     AccountInactiveError,
     InvalidCredentialsError,
     InvalidRefreshTokenError,
 )
-from src.interface.api.controllers.authentication_controller import AuthenticationController
+from src.infrastructure.config.settings import Settings, get_settings
+from src.interface.api.controllers.authentication_controller import (
+    AuthenticationController,
+)
 from src.interface.dependencies.authentication import get_authentication_controller
+from src.interface.security.auth_cookies import (
+    clear_auth_cookies,
+    session_response,
+    set_auth_cookies,
+)
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=SessionResponse)
 async def login(
     request: LoginRequest,
-    controller: Annotated[AuthenticationController, Depends(get_authentication_controller)],
-) -> TokenResponse:
+    response: Response,
+    controller: Annotated[
+        AuthenticationController, Depends(get_authentication_controller)
+    ],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> SessionResponse:
     try:
-        return await controller.login(request)
+        tokens = await controller.login(request)
+        set_auth_cookies(response, tokens, settings)
+        return session_response(tokens)
     except InvalidCredentialsError as error:
-        raise HTTPException(status_code=401, detail="Invalid email or password.") from error
+        raise HTTPException(
+            status_code=401, detail="Invalid email or password."
+        ) from error
     except AccountInactiveError as error:
-        raise HTTPException(status_code=403, detail="Verify your email before signing in.") from error
+        raise HTTPException(
+            status_code=403, detail="Verify your email before signing in."
+        ) from error
 
 
-@router.post("/refresh", response_model=TokenResponse)
+@router.post("/refresh", response_model=SessionResponse)
 async def refresh(
-    request: RefreshTokenRequest,
-    controller: Annotated[AuthenticationController, Depends(get_authentication_controller)],
-) -> TokenResponse:
+    response: Response,
+    controller: Annotated[
+        AuthenticationController, Depends(get_authentication_controller)
+    ],
+    settings: Annotated[Settings, Depends(get_settings)],
+    refresh_token: Annotated[str | None, Cookie(alias="inkfig_refresh")] = None,
+) -> SessionResponse:
     try:
-        return await controller.refresh(request)
+        if not refresh_token:
+            raise InvalidRefreshTokenError
+        tokens = await controller.refresh_token(refresh_token)
+        set_auth_cookies(response, tokens, settings)
+        return session_response(tokens)
     except (InvalidRefreshTokenError, AccountInactiveError) as error:
-        raise HTTPException(status_code=401, detail="The refresh token is invalid.") from error
+        raise HTTPException(
+            status_code=401, detail="The refresh token is invalid."
+        ) from error
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
-    request: LogoutRequest,
-    controller: Annotated[AuthenticationController, Depends(get_authentication_controller)],
+    response: Response,
+    controller: Annotated[
+        AuthenticationController, Depends(get_authentication_controller)
+    ],
+    settings: Annotated[Settings, Depends(get_settings)],
+    refresh_token: Annotated[str | None, Cookie(alias="inkfig_refresh")] = None,
 ) -> Response:
-    await controller.logout(request)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    if refresh_token:
+        await controller.logout_token(refresh_token)
+    clear_auth_cookies(response, settings)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response

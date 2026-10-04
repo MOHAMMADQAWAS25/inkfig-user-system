@@ -17,5 +17,11 @@ class AuthenticationController:
     async def refresh(self, request: RefreshTokenRequest) -> TokenResponse:
         return await self._service.refresh(request.refresh_token)
 
+    async def refresh_token(self, refresh_token: str) -> TokenResponse:
+        return await self._service.refresh(refresh_token)
+
     async def logout(self, request: LogoutRequest) -> None:
         await self._service.logout(request.refresh_token)
+
+    async def logout_token(self, refresh_token: str) -> None:
+        await self._service.logout(refresh_token)
