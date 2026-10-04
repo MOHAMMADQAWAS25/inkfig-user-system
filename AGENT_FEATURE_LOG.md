@@ -1719,3 +1719,74 @@ No frontend changes in this repository.
 ### Notes
 
 The unique index stores and compares the already validated ten-digit representation exactly.
+
+## 2026-10-05 - Store authentication tokens in secure cookies
+
+### Request
+
+Move access and refresh tokens out of browser storage and protect them with secure HTTP-only cookies.
+
+### Changes
+
+- Login and refresh now set tokens as cookies instead of returning token values in JSON.
+- Access cookie is HttpOnly, Secure in production, SameSite=Lax, shared with InkFig API subdomains, and expires with the 15-minute access token.
+- Refresh cookie is HttpOnly, Secure in production, SameSite=Strict, host-only to the user API, limited to the authentication path, and expires after 30 days.
+- Refresh rotates both tokens; logout revokes the refresh token and expires both cookies.
+- Local development keeps configurable cookie security and domain values.
+
+### Repositories
+
+- `inkfig-user-system`: issues, rotates, clears, and configures secure authentication cookies.
+- `inkfig-main-system`: authenticates access cookies.
+- `inkfig-user-FE`: uses credentialed requests and automatic refresh.
+
+### Files
+
+- `src/interface/security/auth_cookies.py`: cookie creation, deletion, and safe session response mapping.
+- `src/interface/api/routes/authentication.py`: cookie-based login, refresh, and logout.
+- `src/entities/dto/authentication.py`: token-free public session response.
+- `src/infrastructure/config/settings.py`, `.env.example`, `template.yaml`: cookie configuration.
+- `tests/test_auth_cookies.py`: security-attribute and deletion tests.
+
+### API
+
+- `POST /api/v1/auth/login`: returns user/session metadata and sets access and refresh cookies; token values are omitted from JSON.
+- `POST /api/v1/auth/refresh`: reads the HTTP-only refresh cookie, rotates it, sets a new access cookie, and returns metadata; 401 when absent, invalid, expired, or revoked.
+- `POST /api/v1/auth/logout`: reads and revokes the refresh cookie when present and expires both cookies.
+
+### Database
+
+No migration required. Existing hashed, rotating refresh-token storage is unchanged.
+
+### Permissions and scope
+
+- Cookies authenticate only the account that received them.
+- Token signing, account-active checks, rotation, expiry, and revocation remain backend-enforced.
+- JavaScript cannot read either token.
+
+### Frontend
+
+- Paired frontend removes token values from localStorage and automatically refreshes expired access.
+
+### Verification
+
+- `[passed] pytest — 43 tests passed`
+- `[passed] mypy src tests — no issues in 70 source files`
+- `[passed] focused ruff check`
+- `[passed] git diff --check`
+
+### Deployment
+
+- Deploy main backend compatibility first, then user backend, then frontend.
+- Production sets `COOKIE_DOMAIN=inkfig-hu.com` and `COOKIE_SECURE=true` through SAM.
+- No migration or new secret is required.
+
+### Git
+
+- Branch: `main`
+- Commit: `01c165f`
+- Push: `successful`
+
+### Notes
+
+The `__Host-` prefix cannot be used because the access cookie must be shared from `user-api.inkfig-hu.com` to `main-api.inkfig-hu.com`; the refresh cookie remains host-only.
