@@ -80,6 +80,20 @@ class RefreshTokenModel(Base):
     )
 
 
+class UserRoleModel(Base):
+    __tablename__ = "user_roles"
+    user_id: Mapped[UUID] = mapped_column(PostgresUUID(as_uuid=True), ForeignKey("user_accounts.user_id", ondelete="CASCADE"), primary_key=True)
+    role_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    assigned_by: Mapped[UUID | None] = mapped_column(PostgresUUID(as_uuid=True), ForeignKey("user_accounts.user_id", ondelete="SET NULL"))
+
+
+class RolePermissionModel(Base):
+    __tablename__ = "role_permissions"
+    role_code: Mapped[str] = mapped_column(String(64), primary_key=True)
+    permission_code: Mapped[str] = mapped_column(String(100), primary_key=True)
+
+
 class PasswordResetCodeModel(Base):
     __tablename__ = "password_reset_codes"
 

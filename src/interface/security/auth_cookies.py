@@ -43,5 +43,6 @@ def session_response(tokens: TokenResponse) -> SessionResponse:
         user_id=tokens.user_id,
         email=tokens.email,
         full_name=tokens.full_name,
+        role=tokens.role,
         permissions=tokens.permissions,
     )

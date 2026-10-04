@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.entities.dto.authentication import AuthenticatedUser
 from src.infrastructure.db.postgres.models.user_profile import (
     RefreshTokenModel,
+    RolePermissionModel,
     UserAccountModel,
     UserProfileModel,
+    UserRoleModel,
 )
 
 
@@ -18,12 +20,16 @@ class SqlAlchemyAuthenticationRepository:
 
     async def find_user_by_email(self, email: str) -> AuthenticatedUser | None:
         statement = (
-            select(UserAccountModel, UserProfileModel.full_name)
+            select(UserAccountModel, UserProfileModel.full_name, UserRoleModel.role_code)
             .join(UserProfileModel, UserProfileModel.user_id == UserAccountModel.user_id)
+            .join(UserRoleModel, UserRoleModel.user_id == UserAccountModel.user_id)
             .where(UserAccountModel.email == email)
         )
         row = (await self._session.execute(statement)).first()
-        return None if row is None else self._to_user(row[0], row[1])
+        if row is None:
+            return None
+        permissions = list((await self._session.execute(select(RolePermissionModel.permission_code).where(RolePermissionModel.role_code == row[2]))).scalars())
+        return self._to_user(row[0], row[1], row[2], permissions)
 
     async def store_refresh_token(
         self, token_id: UUID, user_id: UUID, token_hash: str, expires_at: datetime
@@ -42,9 +48,10 @@ class SqlAlchemyAuthenticationRepository:
         self, token_hash: str, consumed_at: datetime
     ) -> AuthenticatedUser | None:
         statement = (
-            select(RefreshTokenModel, UserAccountModel, UserProfileModel.full_name)
+            select(RefreshTokenModel, UserAccountModel, UserProfileModel.full_name, UserRoleModel.role_code)
             .join(UserAccountModel, UserAccountModel.user_id == RefreshTokenModel.user_id)
             .join(UserProfileModel, UserProfileModel.user_id == UserAccountModel.user_id)
+            .join(UserRoleModel, UserRoleModel.user_id == UserAccountModel.user_id)
             .where(
                 RefreshTokenModel.token_hash == token_hash,
                 RefreshTokenModel.revoked_at.is_(None),
@@ -56,10 +63,11 @@ class SqlAlchemyAuthenticationRepository:
         if row is None:
             await self._session.rollback()
             return None
-        token, account, full_name = row
+        token, account, full_name, role = row
         token.revoked_at = consumed_at
         await self._session.commit()
-        return self._to_user(account, full_name)
+        permissions = list((await self._session.execute(select(RolePermissionModel.permission_code).where(RolePermissionModel.role_code == role))).scalars())
+        return self._to_user(account, full_name, role, permissions)
 
     async def revoke_refresh_token(self, token_hash: str, revoked_at: datetime) -> None:
         await self._session.execute(
@@ -73,7 +81,7 @@ class SqlAlchemyAuthenticationRepository:
         await self._session.commit()
 
     @staticmethod
-    def _to_user(account: UserAccountModel, full_name: str) -> AuthenticatedUser:
+    def _to_user(account: UserAccountModel, full_name: str, role: str, permissions: list[str]) -> AuthenticatedUser:
         return AuthenticatedUser(
             user_id=account.user_id,
             email=account.email,
@@ -82,4 +90,6 @@ class SqlAlchemyAuthenticationRepository:
             is_active=account.is_active,
             email_verified_at=account.email_verified_at,
             token_version=account.token_version,
+            role=role,
+            permissions=permissions,
         )

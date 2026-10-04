@@ -37,6 +37,16 @@ async def run() -> None:
                     migration.name,
                 )
             print(f"Applied {migration.name}")
+        system_admin_email = os.environ.get("SYSTEM_ADMIN_EMAIL", "").strip().lower()
+        if system_admin_email:
+            updated = await connection.execute(
+                """update public.user_roles ur set role_code = 'system_administrator', assigned_at = now()
+                   from public.user_accounts ua where ua.user_id = ur.user_id and ua.email = $1""",
+                system_admin_email,
+            )
+            if updated == "UPDATE 0":
+                raise RuntimeError("SYSTEM_ADMIN_EMAIL does not match an existing account.")
+            print("Ensured the configured system administrator role.")
     finally:
         await connection.close()
 

@@ -24,6 +24,8 @@ class AuthenticatedUser(BaseModel):
     is_active: bool
     email_verified_at: datetime | None
     token_version: int
+    role: str = "user"
+    permissions: list[str] = []
 
 
 class TokenResponse(BaseModel):
@@ -34,6 +36,7 @@ class TokenResponse(BaseModel):
     user_id: UUID
     email: str
     full_name: str
+    role: str = "user"
     permissions: list[str] = []
 
 
@@ -42,6 +45,7 @@ class SessionResponse(BaseModel):
     user_id: UUID
     email: str
     full_name: str
+    role: str = "user"
     permissions: list[str] = []
 
 

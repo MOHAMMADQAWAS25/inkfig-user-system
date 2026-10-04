@@ -64,6 +64,8 @@ class AuthenticationService:
                 "sub": str(user.user_id),
                 "email": user.email,
                 "ver": user.token_version,
+                "role": user.role,
+                "permissions": user.permissions,
                 "type": "access",
                 "iss": self._jwt_issuer,
                 "iat": now,
@@ -86,6 +88,8 @@ class AuthenticationService:
             user_id=user.user_id,
             email=user.email,
             full_name=user.full_name,
+            role=user.role,
+            permissions=user.permissions,
         )
 
     def _hash_refresh_token(self, token: str) -> str:
