@@ -1790,3 +1790,77 @@ No migration required. Existing hashed, rotating refresh-token storage is unchan
 ### Notes
 
 The `__Host-` prefix cannot be used because the access cookie must be shared from `user-api.inkfig-hu.com` to `main-api.inkfig-hu.com`; the refresh cookie remains host-only.
+## 2026-10-05 - Establish role and permission authorization
+
+### Request
+
+Implement the five-role InkFig authorization model with new accounts defaulting to user and protected role/account administration.
+
+### Changes
+
+- Added viewer, user, supervisor, admin, and system-administrator roles with normalized permissions.
+- New and existing accounts receive user by default; login and refresh tokens now include authoritative role and permission claims.
+- Added user listing, role assignment, banning, and activation endpoints.
+- Admins may manage only lower-ranked accounts and cannot assign admin or system-administrator; system administrators can manage all other accounts.
+- Role/status changes revoke the target's refresh sessions and increment its token version.
+
+### Repositories
+
+- `inkfig-user-system`: owns RBAC persistence, session claims, and account administration.
+- `inkfig-main-system`: consumes permission claims for work endpoints.
+- `inkfig-user-FE`: consumes roles and permissions for navigation and administration.
+
+### Files
+
+- `migrations/20261005_007_add_rbac.sql`: creates and seeds RBAC tables and default-role trigger.
+- `src/app/services/administration_service.py`: enforces hierarchy rules.
+- `src/infrastructure/repositories/administration_repository.py`: persists role/status changes and revokes sessions.
+- `src/interface/api/routes/administration.py`: exposes protected administration endpoints.
+- Authentication DTO, repository, service, cookies, migration runner, and deployment workflow now carry RBAC data.
+
+### API
+
+- `GET /api/v1/admin/users`: lists accounts for users.read.
+- `PATCH /api/v1/admin/users/{user_id}/role`: changes a role subject to backend hierarchy rules.
+- `PATCH /api/v1/admin/users/{user_id}/status`: bans or activates a lower-ranked account.
+- Login and refresh responses add role and populated permissions.
+
+### Database
+
+- Migration: `20261005_007_add_rbac.sql`
+- Creates roles, permissions, role_permissions, and user_roles with foreign keys, uniqueness, RLS, service-role grants, canonical seeds, existing-account backfill, and automatic user assignment.
+- Rollback must drop the trigger/function and four RBAC tables after dependent code is rolled back.
+
+### Permissions and scope
+
+- `users.read`, `users.role.manage`, and `users.status.manage` protect administration.
+- Admin cannot manage peers/higher roles or assign admin/system-administrator.
+- Only system-administrator can assign admin or system-administrator.
+- Backend validates every management decision.
+
+### Frontend
+
+No frontend changes in this repository.
+
+### Verification
+
+- `[passed] py -3.12 -m pytest -q - 43 tests passed`
+- `[passed] py -3.12 -m mypy src tests - 77 files`
+- `[passed] py -3.12 -m compileall -q src tests`
+- `[passed] git diff --check`
+
+### Deployment
+
+- Deploy this service first and run migration 007 before either consumer.
+- Add GitHub production secret `SYSTEM_ADMIN_EMAIL` containing the existing account that owns the system.
+- No new application secret is required.
+
+### Git
+
+- Branch: `main`
+- Commit: `502b304`
+- Push: `successful`
+
+### Notes
+
+Role/status changes force refresh-session revocation; the short-lived access cookie expires within 15 minutes.
