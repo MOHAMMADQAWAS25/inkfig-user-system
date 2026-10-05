@@ -1,0 +1,184 @@
+from uuid import UUID
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.entities.dto.social_profile import (
+    ProfileAccountSummary,
+    PublicProfileResponse,
+)
+
+
+class SqlAlchemySocialProfileRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_profile(
+        self, profile_user_id: UUID, viewer_user_id: UUID
+    ) -> PublicProfileResponse | None:
+        row = (
+            await self._session.execute(
+                text(
+                    """
+                    select
+                        p.user_id,
+                        p.full_name,
+                        (select count(*) from user_follows f
+                         where f.followed_user_id = p.user_id) as follower_count,
+                        (select count(*) from user_follows f
+                         where f.follower_user_id = p.user_id) as following_count,
+                        (select count(*)
+                         from works w join work_likes l on l.work_id = w.work_id
+                         where w.owner_user_id = p.user_id
+                           and w.status = 'published') as like_count,
+                        exists (
+                            select 1 from user_follows f
+                            where f.follower_user_id = :viewer_user_id
+                              and f.followed_user_id = p.user_id
+                        ) as is_following
+                    from user_profiles p
+                    join user_accounts a on a.user_id = p.user_id
+                    where p.user_id = :profile_user_id
+                      and p.is_active = true
+                      and a.is_active = true
+                      and a.email_verified_at is not null
+                    """
+                ),
+                {
+                    "profile_user_id": profile_user_id,
+                    "viewer_user_id": viewer_user_id,
+                },
+            )
+        ).mappings().first()
+        if row is None:
+            return None
+        return PublicProfileResponse(
+            user_id=row.user_id,
+            full_name=row.full_name,
+            follower_count=row.follower_count,
+            following_count=row.following_count,
+            like_count=row.like_count,
+            is_following=row.is_following,
+            is_self=row.user_id == viewer_user_id,
+        )
+
+    async def list_followers(
+        self, profile_user_id: UUID, viewer_user_id: UUID
+    ) -> list[ProfileAccountSummary] | None:
+        return await self._list_connections(
+            profile_user_id, viewer_user_id, followers=True
+        )
+
+    async def list_following(
+        self, profile_user_id: UUID, viewer_user_id: UUID
+    ) -> list[ProfileAccountSummary] | None:
+        return await self._list_connections(
+            profile_user_id, viewer_user_id, followers=False
+        )
+
+    async def _list_connections(
+        self, profile_user_id: UUID, viewer_user_id: UUID, *, followers: bool
+    ) -> list[ProfileAccountSummary] | None:
+        exists = await self._session.scalar(
+            text(
+                """
+                select exists(
+                    select 1 from user_accounts
+                    where user_id = :profile_user_id
+                      and is_active = true
+                      and email_verified_at is not null
+                )
+                """
+            ),
+            {"profile_user_id": profile_user_id},
+        )
+        if not exists:
+            return None
+        account_column = "f.follower_user_id" if followers else "f.followed_user_id"
+        scope_column = "f.followed_user_id" if followers else "f.follower_user_id"
+        rows = (
+            await self._session.execute(
+                text(
+                    f"""
+                    select
+                        p.user_id,
+                        p.full_name,
+                        exists (
+                            select 1 from user_follows mine
+                            where mine.follower_user_id = :viewer_user_id
+                              and mine.followed_user_id = p.user_id
+                        ) as is_following
+                    from user_follows f
+                    join user_profiles p on p.user_id = {account_column}
+                    join user_accounts a on a.user_id = p.user_id
+                    where {scope_column} = :profile_user_id
+                      and p.is_active = true
+                      and a.is_active = true
+                      and a.email_verified_at is not null
+                    order by f.created_at desc, p.user_id
+                    """
+                ),
+                {
+                    "profile_user_id": profile_user_id,
+                    "viewer_user_id": viewer_user_id,
+                },
+            )
+        ).mappings()
+        return [
+            ProfileAccountSummary(
+                user_id=row.user_id,
+                full_name=row.full_name,
+                is_following=row.is_following,
+            )
+            for row in rows
+        ]
+
+    async def set_follow(
+        self, follower_user_id: UUID, followed_user_id: UUID, following: bool
+    ) -> bool:
+        target_exists = await self._session.scalar(
+            text(
+                """
+                select exists(
+                    select 1 from user_accounts
+                    where user_id = :followed_user_id
+                      and is_active = true
+                      and email_verified_at is not null
+                )
+                """
+            ),
+            {"followed_user_id": followed_user_id},
+        )
+        if not target_exists:
+            return False
+        if following:
+            await self._session.execute(
+                text(
+                    """
+                    insert into user_follows (follower_user_id, followed_user_id)
+                    values (:follower_user_id, :followed_user_id)
+                    on conflict do nothing
+                    """
+                ),
+                {
+                    "follower_user_id": follower_user_id,
+                    "followed_user_id": followed_user_id,
+                },
+            )
+        else:
+            await self._session.execute(
+                text(
+                    """
+                    delete from user_follows
+                    where follower_user_id = :follower_user_id
+                      and followed_user_id = :followed_user_id
+                    """
+                ),
+                {
+                    "follower_user_id": follower_user_id,
+                    "followed_user_id": followed_user_id,
+                },
+            )
+        await self._session.commit()
+        return True
+

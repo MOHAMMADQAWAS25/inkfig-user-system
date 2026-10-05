@@ -94,6 +94,24 @@ class RolePermissionModel(Base):
     permission_code: Mapped[str] = mapped_column(String(100), primary_key=True)
 
 
+class UserFollowModel(Base):
+    __tablename__ = "user_follows"
+
+    follower_user_id: Mapped[UUID] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("user_accounts.user_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    followed_user_id: Mapped[UUID] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("user_accounts.user_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class PasswordResetCodeModel(Base):
     __tablename__ = "password_reset_codes"
 

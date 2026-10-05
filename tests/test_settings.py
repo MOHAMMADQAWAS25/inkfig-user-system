@@ -4,9 +4,13 @@ from uuid import UUID, uuid4
 import pytest
 
 from src.app.services.settings_service import SettingsService
-from src.entities.dto.settings import ChangePasswordRequest, ProfileSettingsResponse, UpdateProfileSettingsRequest
-from src.entities.exceptions.settings import CurrentPasswordInvalidError
+from src.entities.dto.settings import (
+    ChangePasswordRequest,
+    ProfileSettingsResponse,
+    UpdateProfileSettingsRequest,
+)
 from src.entities.enums.gender import Gender
+from src.entities.exceptions.settings import CurrentPasswordInvalidError
 from src.infrastructure.security.passwords import Pbkdf2PasswordHasher
 
 
@@ -23,7 +27,9 @@ class SettingsRepositoryStub:
     async def get_password_hash(self, user_id: UUID) -> str:
         return self.password_hash
 
-    async def update_profile(self, user_id: UUID, request: UpdateProfileSettingsRequest) -> ProfileSettingsResponse:
+    async def update_profile(
+        self, user_id: UUID, request: UpdateProfileSettingsRequest
+    ) -> ProfileSettingsResponse:
         return ProfileSettingsResponse(email="12345678@students.hebron.edu", is_active=True, **request.model_dump())
 
     async def update_password(self, user_id: UUID, password_hash: str) -> None:
@@ -35,7 +41,14 @@ class SettingsRepositoryStub:
 
 def test_profile_update_reuses_registration_validation() -> None:
     with pytest.raises(ValueError):
-        UpdateProfileSettingsRequest(full_name="Ink Fig", phone_number="123", gender="female", date_of_birth="2000-01-01")  # type: ignore[arg-type]
+        UpdateProfileSettingsRequest.model_validate(
+            {
+                "full_name": "Ink Fig",
+                "phone_number": "123",
+                "gender": "female",
+                "date_of_birth": "2000-01-01",
+            }
+        )
 
 
 @pytest.mark.asyncio

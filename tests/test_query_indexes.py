@@ -21,3 +21,14 @@ def test_low_selectivity_and_superseded_indexes_are_removed() -> None:
     assert "drop index if exists public.user_profiles_active_idx" in migration
     assert "drop index if exists public.user_accounts_active_idx" in migration
     assert "drop index if exists public.refresh_tokens_user_idx" in migration
+
+
+def test_follow_indexes_support_both_connection_directions() -> None:
+    migration = (
+        ROOT / "migrations" / "20261006_010_add_user_follows.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "(follower_user_id, followed_user_id)" in migration
+    assert "(follower_user_id, created_at desc, followed_user_id)" in migration
+    assert "(followed_user_id, created_at desc, follower_user_id)" in migration
+    assert "check (follower_user_id <> followed_user_id)" in migration
