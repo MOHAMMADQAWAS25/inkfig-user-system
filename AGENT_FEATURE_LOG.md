@@ -2001,3 +2001,62 @@ No frontend changes.
 
 - Future database tickets must compare query predicates, join direction, ordering, and pagination with existing indexes and avoid redundant or low-selectivity indexes.
 - Query plans should be reassessed using production-scale statistics as table cardinality grows; small tables may correctly use sequential scans despite having suitable indexes.
+
+## 2026-10-06 - Add authenticated account settings APIs
+
+### Request
+
+Support profile editing, password changes, and account deactivation while keeping email immutable and phone numbers valid and unique.
+
+### Changes
+
+- Added authenticated profile read/update endpoints scoped to the signed-in user.
+- Reused registration validation for names, exactly 10 phone digits, gender, and past dates of birth.
+- Kept email outside the update request so it cannot be changed.
+- Enforced phone uniqueness through the existing database index and mapped collisions to HTTP 409.
+- Added current-password verification, confirmation, secure hashing, token rotation, and refresh-token revocation.
+- Added self-deactivation that updates both account tables, revokes sessions, and clears cookies.
+- Added focused service tests.
+
+### Repositories
+
+- `inkfig-user-system`: settings API, validation, persistence, security, and tests.
+- `inkfig-user-FE`: paired localized settings interface.
+- `inkfig-main-system`: no changes required.
+
+### API
+
+- `GET /api/v1/settings/profile`
+- `PUT /api/v1/settings/profile`
+- `PUT /api/v1/settings/password`
+- `PUT /api/v1/settings/account-status`
+
+### Database
+
+- No new migration required.
+- Phone uniqueness already exists in `migrations/20260930_006_add_unique_phone_number.sql`.
+
+### Permissions and scope
+
+- Every endpoint requires the signed `profile.read_own` permission.
+- User identity comes only from the verified access-cookie principal.
+- Password changes and deactivation invalidate refresh sessions and rotate the token version.
+
+### Verification
+
+- `[passed] git diff --check`
+- `[not run] pytest` - no Python interpreter or pytest executable is installed in this environment.
+
+### Deployment
+
+- Deploy `inkfig-user-system` before `inkfig-user-FE`.
+- No migration, secret, or environment-variable change is required.
+
+### Git
+
+- Branch: `feature/account-settings`
+- Commit and push: completed after final synchronization.
+
+### Notes
+
+Inactive users cannot authenticate, so self-service deactivation is reversible only by an authorized administrator.
