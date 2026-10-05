@@ -1,5 +1,5 @@
 from datetime import date
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -17,25 +17,25 @@ class SettingsRepositoryStub:
         self.updated_password_hash: str | None = None
         self.active = True
 
-    async def get_profile(self, user_id):
+    async def get_profile(self, user_id: UUID) -> ProfileSettingsResponse:
         return ProfileSettingsResponse(email="12345678@students.hebron.edu", full_name="Ink Fig", phone_number="0599123456", gender=Gender.FEMALE, date_of_birth=date(2000, 1, 1), is_active=True)
 
-    async def get_password_hash(self, user_id):
+    async def get_password_hash(self, user_id: UUID) -> str:
         return self.password_hash
 
-    async def update_profile(self, user_id, request):
+    async def update_profile(self, user_id: UUID, request: UpdateProfileSettingsRequest) -> ProfileSettingsResponse:
         return ProfileSettingsResponse(email="12345678@students.hebron.edu", is_active=True, **request.model_dump())
 
-    async def update_password(self, user_id, password_hash):
+    async def update_password(self, user_id: UUID, password_hash: str) -> None:
         self.updated_password_hash = password_hash
 
-    async def set_active(self, user_id, is_active):
+    async def set_active(self, user_id: UUID, is_active: bool) -> None:
         self.active = is_active
 
 
 def test_profile_update_reuses_registration_validation() -> None:
     with pytest.raises(ValueError):
-        UpdateProfileSettingsRequest(full_name="Ink Fig", phone_number="123", gender="female", date_of_birth="2000-01-01")
+        UpdateProfileSettingsRequest(full_name="Ink Fig", phone_number="123", gender="female", date_of_birth="2000-01-01")  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio

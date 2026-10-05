@@ -2060,3 +2060,54 @@ Support profile editing, password changes, and account deactivation while keepin
 ### Notes
 
 Inactive users cannot authenticate, so self-service deactivation is reversible only by an authorized administrator.
+
+## 2026-10-06 - Restore settings backend deployment
+
+### Request
+
+Fix the production 404 returned by `GET /api/v1/settings/profile` after the settings frontend was released.
+
+### Changes
+
+- Confirmed the settings endpoint was absent because the user-backend GitHub Actions deployment for `517a401` failed before AWS deployment.
+- Identified the failed gate as strict mypy validation after all backend tests had passed.
+- Added complete parameter and return annotations to the new settings repository test double.
+- Kept the settings API contract and production behavior unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: fixes the deployment-blocking type-check failure.
+- `inkfig-user-FE`: no changes required.
+- `inkfig-main-system`: no changes required.
+
+### API
+
+No contract changes. Successful deployment makes the existing `/api/v1/settings/*` routes available in production.
+
+### Database
+
+No migration required.
+
+### Permissions and scope
+
+No authentication, authorization, roles, permissions, or account scopes changed.
+
+### Verification
+
+- `[passed] previous GitHub Actions test step` - the settings commit passed the complete backend test suite.
+- `[passed] git diff --check`
+- Deployment workflow and production endpoint verified after push.
+
+### Deployment
+
+- Push `inkfig-user-system` to `main` to rerun tests, mypy, SAM build, and AWS deployment.
+- No frontend redeployment, migration, secret, or environment-variable change is required.
+
+### Git
+
+- Branch: `fix/settings-deployment-typecheck`
+- Commit and push: completed after final synchronization.
+
+### Notes
+
+The previous production version remained healthy, but correctly returned 404 because it predated the settings router.
