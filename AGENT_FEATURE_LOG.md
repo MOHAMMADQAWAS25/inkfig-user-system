@@ -2177,7 +2177,7 @@ No frontend changes in this repository. The coordinated UI is in `inkfig-user-FE
 
 ### Verification
 
-- `[passed] uv run --with-requirements requirements.txt pytest -q — 52 passed`
+- `[passed] uv run --with-requirements requirements.txt pytest -q — 53 passed`
 - `[passed] uv run --with-requirements requirements.txt mypy src tests — no issues in 95 files`
 - `[passed] ruff check on all changed user-backend files`
 - `[passed] python -m migrations.run — follow migration applied to Supabase`
