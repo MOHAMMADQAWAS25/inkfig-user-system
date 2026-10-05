@@ -26,5 +26,8 @@ class SettingsService:
             raise CurrentPasswordInvalidError
         await self._repository.update_password(user_id, self._password_hasher.hash(request.password))
 
-    async def set_active(self, user_id: UUID, is_active: bool) -> None:
-        await self._repository.set_active(user_id, is_active)
+    async def deactivate(self, user_id: UUID, current_password: str) -> None:
+        password_hash = await self._repository.get_password_hash(user_id)
+        if password_hash is None or not self._password_hasher.verify(current_password, password_hash):
+            raise CurrentPasswordInvalidError
+        await self._repository.set_active(user_id, False)

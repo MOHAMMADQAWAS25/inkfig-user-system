@@ -63,9 +63,10 @@ async def set_account_status(
     service: Annotated[SettingsService, Depends(get_settings_service)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Response:
-    if request.is_active:
-        raise HTTPException(400, "An inactive account must be reactivated by an administrator.")
-    await service.set_active(principal.user_id, False)
+    try:
+        await service.deactivate(principal.user_id, request.current_password)
+    except CurrentPasswordInvalidError as error:
+        raise HTTPException(400, "The current password is incorrect.") from error
     clear_auth_cookies(response, settings)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response

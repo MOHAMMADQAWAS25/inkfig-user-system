@@ -87,7 +87,7 @@ class SqlAlchemyPasswordResetRepository:
             .join(UserAccountModel, UserAccountModel.user_id == PasswordResetCodeModel.user_id)
             .where(
                 UserAccountModel.email == email,
-                UserAccountModel.is_active.is_(True),
+                UserAccountModel.account_status != "admin_suspended",
                 UserAccountModel.email_verified_at.is_not(None),
                 PasswordResetCodeModel.reset_token_hash == token_hash,
                 PasswordResetCodeModel.verified_at.is_not(None),

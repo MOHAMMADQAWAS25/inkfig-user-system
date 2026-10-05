@@ -23,14 +23,14 @@ class SqlAlchemySocialProfileRepository:
                     select
                         p.user_id,
                         p.full_name,
-                        (select count(*) from user_follows f
-                         where f.followed_user_id = p.user_id) as follower_count,
-                        (select count(*) from user_follows f
-                         where f.follower_user_id = p.user_id) as following_count,
+                        (select count(*) from user_follows f join user_accounts fa on fa.user_id = f.follower_user_id
+                         where f.followed_user_id = p.user_id and fa.account_status = 'active') as follower_count,
+                        (select count(*) from user_follows f join user_accounts fa on fa.user_id = f.followed_user_id
+                         where f.follower_user_id = p.user_id and fa.account_status = 'active') as following_count,
                         (select count(*)
-                         from works w join work_likes l on l.work_id = w.work_id
+                         from works w join work_likes l on l.work_id = w.work_id join user_accounts la on la.user_id = l.user_id
                          where w.owner_user_id = p.user_id
-                           and w.status = 'published') as like_count,
+                           and w.status = 'published' and la.account_status = 'active') as like_count,
                         exists (
                             select 1 from user_follows f
                             where f.follower_user_id = :viewer_user_id
@@ -40,7 +40,7 @@ class SqlAlchemySocialProfileRepository:
                     join user_accounts a on a.user_id = p.user_id
                     where p.user_id = :profile_user_id
                       and p.is_active = true
-                      and a.is_active = true
+                      and a.account_status = 'active'
                       and a.email_verified_at is not null
                     """
                 ),
@@ -85,7 +85,7 @@ class SqlAlchemySocialProfileRepository:
                 select exists(
                     select 1 from user_accounts
                     where user_id = :profile_user_id
-                      and is_active = true
+                      and account_status = 'active'
                       and email_verified_at is not null
                 )
                 """
@@ -113,7 +113,7 @@ class SqlAlchemySocialProfileRepository:
                     join user_accounts a on a.user_id = p.user_id
                     where {scope_column} = :profile_user_id
                       and p.is_active = true
-                      and a.is_active = true
+                      and a.account_status = 'active'
                       and a.email_verified_at is not null
                     order by f.created_at desc, p.user_id
                     """
@@ -142,7 +142,7 @@ class SqlAlchemySocialProfileRepository:
                 select exists(
                     select 1 from user_accounts
                     where user_id = :followed_user_id
-                      and is_active = true
+                      and account_status = 'active'
                       and email_verified_at is not null
                 )
                 """

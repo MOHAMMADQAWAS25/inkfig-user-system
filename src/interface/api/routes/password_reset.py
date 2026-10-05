@@ -14,6 +14,7 @@ from src.entities.exceptions.authentication import (
     PasswordResetCodeExpiredError,
     PasswordResetCodeInvalidError,
     PasswordResetTokenInvalidError,
+    AccountAdminSuspendedError,
 )
 from src.entities.exceptions.registration import EmailDeliveryError
 from src.interface.api.controllers.password_reset_controller import PasswordResetController
@@ -33,6 +34,8 @@ async def request_password_reset(
 ) -> PasswordResetRequestResponse:
     try:
         return await controller.request(request)
+    except AccountAdminSuspendedError as error:
+        raise HTTPException(status_code=423, detail="Password reset is unavailable for an administrator-suspended account.") from error
     except EmailDeliveryError as error:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

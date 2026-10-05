@@ -8,6 +8,7 @@ from src.entities.dto.authentication import (
 )
 from src.entities.exceptions.authentication import (
     AccountInactiveError,
+    AccountAdminSuspendedError,
     InvalidCredentialsError,
     InvalidRefreshTokenError,
 )
@@ -42,6 +43,8 @@ async def login(
         raise HTTPException(
             status_code=401, detail="Invalid email or password."
         ) from error
+    except AccountAdminSuspendedError as error:
+        raise HTTPException(status_code=423, detail="This account was suspended by an administrator.") from error
     except AccountInactiveError as error:
         raise HTTPException(
             status_code=403, detail="Verify your email before signing in."

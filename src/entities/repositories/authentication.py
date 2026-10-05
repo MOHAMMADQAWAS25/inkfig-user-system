@@ -7,6 +7,7 @@ from src.entities.dto.authentication import AuthenticatedUser
 
 class AuthenticationRepository(Protocol):
     async def find_user_by_email(self, email: str) -> AuthenticatedUser | None: ...
+    async def reactivate_self_deactivated(self, user_id: UUID) -> AuthenticatedUser: ...
 
     async def store_refresh_token(
         self, token_id: UUID, user_id: UUID, token_hash: str, expires_at: datetime

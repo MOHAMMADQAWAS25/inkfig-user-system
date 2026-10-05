@@ -4,6 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from src.entities.dto.registration import RegisterUserRequest
+from src.entities.enums.account_status import AccountStatus
 
 
 class LoginRequest(BaseModel):
@@ -22,6 +23,7 @@ class AuthenticatedUser(BaseModel):
     full_name: str
     password_hash: str
     is_active: bool
+    account_status: AccountStatus = AccountStatus.ACTIVE
     email_verified_at: datetime | None
     token_version: int
     role: str = "user"

@@ -66,5 +66,5 @@ async def test_password_change_requires_current_password_and_hashes_new_password
 async def test_account_deactivation_is_scoped_to_authenticated_user() -> None:
     repository = SettingsRepositoryStub()
     service = SettingsService(repository, Pbkdf2PasswordHasher())
-    await service.set_active(repository.user_id, False)
+    await service.deactivate(repository.user_id, "old-password")
     assert repository.active is False

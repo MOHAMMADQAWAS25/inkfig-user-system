@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.entities.dto.administration import UserAdministrationResponse
 from src.entities.enums.role import Role
+from src.entities.enums.account_status import AccountStatus
 from src.infrastructure.db.postgres.models.user_profile import RefreshTokenModel, UserAccountModel, UserProfileModel, UserRoleModel
 
 
@@ -28,7 +29,7 @@ class SqlAlchemyAdministrationRepository:
         await self._invalidate_sessions(user_id)
 
     async def set_active(self, user_id: UUID, is_active: bool) -> None:
-        await self._session.execute(update(UserAccountModel).where(UserAccountModel.user_id == user_id).values(is_active=is_active, token_version=UserAccountModel.token_version + 1))
+        await self._session.execute(update(UserAccountModel).where(UserAccountModel.user_id == user_id).values(is_active=is_active, account_status=AccountStatus.ACTIVE.value if is_active else AccountStatus.ADMIN_SUSPENDED.value, token_version=UserAccountModel.token_version + 1))
         await self._session.execute(update(UserProfileModel).where(UserProfileModel.user_id == user_id).values(is_active=is_active))
         await self._invalidate_sessions(user_id, increment_version=False)
 

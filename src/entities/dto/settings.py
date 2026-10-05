@@ -51,4 +51,4 @@ class ChangePasswordRequest(BaseModel):
 
 
 class AccountStatusRequest(BaseModel):
-    is_active: bool
+    current_password: str = Field(min_length=8, max_length=128)

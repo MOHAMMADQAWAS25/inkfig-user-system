@@ -13,6 +13,7 @@ from src.entities.exceptions.authentication import (
     PasswordResetCodeExpiredError,
     PasswordResetCodeInvalidError,
     PasswordResetTokenInvalidError,
+    AccountAdminSuspendedError,
 )
 from src.entities.repositories.authentication import AuthenticationRepository
 from src.entities.repositories.email_code_rate_limit import EmailCodeRateLimitRepository
@@ -21,6 +22,7 @@ from src.entities.repositories.password_reset import (
     PasswordResetRepository,
 )
 from src.entities.repositories.registration import PasswordHasher
+from src.entities.enums.account_status import AccountStatus
 
 
 class PasswordResetService:
@@ -55,6 +57,9 @@ class PasswordResetService:
         self._hourly_block_seconds = hourly_block_seconds
 
     async def request(self, email: str) -> PasswordResetRequestResponse:
+        user = await self._authentication_repository.find_user_by_email(email)
+        if user is not None and user.account_status == AccountStatus.ADMIN_SUSPENDED:
+            raise AccountAdminSuspendedError
         rate = await self._reserve_email_send(email)
         response = PasswordResetRequestResponse(
             expires_in_seconds=self._code_ttl_minutes * 60,
@@ -63,8 +68,7 @@ class PasswordResetService:
         )
         if not rate.allowed:
             return response
-        user = await self._authentication_repository.find_user_by_email(email)
-        if user is None or not user.is_active or user.email_verified_at is None:
+        if user is None or user.email_verified_at is None:
             return response
         code = f"{secrets.randbelow(1_000_000):06d}"
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=self._code_ttl_minutes)

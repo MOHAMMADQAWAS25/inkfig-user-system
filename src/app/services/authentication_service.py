@@ -8,11 +8,13 @@ import jwt
 from src.entities.dto.authentication import AuthenticatedUser, TokenResponse
 from src.entities.exceptions.authentication import (
     AccountInactiveError,
+    AccountAdminSuspendedError,
     InvalidCredentialsError,
     InvalidRefreshTokenError,
 )
 from src.entities.repositories.authentication import AuthenticationRepository
 from src.entities.repositories.registration import PasswordHasher
+from src.entities.enums.account_status import AccountStatus
 
 
 class AuthenticationService:
@@ -38,6 +40,10 @@ class AuthenticationService:
         user = await self._repository.find_user_by_email(email)
         if user is None or not self._password_hasher.verify(password, user.password_hash):
             raise InvalidCredentialsError
+        if user.account_status == AccountStatus.ADMIN_SUSPENDED:
+            raise AccountAdminSuspendedError
+        if user.account_status == AccountStatus.SELF_DEACTIVATED:
+            user = await self._repository.reactivate_self_deactivated(user.user_id)
         self._ensure_active(user)
         return await self._issue_session(user)
 

@@ -9,6 +9,9 @@ class InvalidCredentialsError(AuthenticationError):
 class AccountInactiveError(AuthenticationError):
     """The account is not active and verified."""
 
+class AccountAdminSuspendedError(AuthenticationError):
+    """The account was suspended by an administrator."""
+
 
 class InvalidRefreshTokenError(AuthenticationError):
     """The refresh token is invalid, expired, or revoked."""

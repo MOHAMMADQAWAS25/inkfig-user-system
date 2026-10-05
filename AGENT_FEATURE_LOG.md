@@ -2199,3 +2199,12 @@ No frontend changes in this repository. The coordinated UI is in `inkfig-user-FE
 
 - Received likes count only includes likes on published works.
 - Connection lists currently return the complete relationship list; cursor pagination should be added before unusually large accounts require it.
+
+## 2026-10-06 - Add reversible account-status lifecycle
+
+Implemented `active`, `self_deactivated`, and `admin_suspended` account states. Self-deactivation requires the current password, revokes sessions, hides the account, and reactivates only after a valid sign-in. Administrator suspension blocks login and password reset and can only be reversed by an administrator. Active-only filtering now applies to social profiles, follower/following lists and counters, and received-like counts.
+
+- Migration: `20261006_011_add_account_status.sql`
+- Verification: `git diff --check` passed; focused tests added/updated; Python tooling unavailable locally.
+- Deployment: deploy this repository and migration before the main backend and frontend.
+- Branch: `feature/account-status-lifecycle`; push to `main` after synchronization.

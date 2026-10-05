@@ -5,6 +5,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.entities.dto.authentication import AuthenticatedUser
+from src.entities.enums.account_status import AccountStatus
 from src.infrastructure.db.postgres.models.user_profile import (
     RefreshTokenModel,
     RolePermissionModel,
@@ -43,6 +44,14 @@ class SqlAlchemyAuthenticationRepository:
             )
         )
         await self._session.commit()
+
+    async def reactivate_self_deactivated(self, user_id: UUID) -> AuthenticatedUser:
+        await self._session.execute(update(UserAccountModel).where(UserAccountModel.user_id == user_id, UserAccountModel.account_status == AccountStatus.SELF_DEACTIVATED.value).values(is_active=True, account_status=AccountStatus.ACTIVE.value, token_version=UserAccountModel.token_version + 1))
+        await self._session.execute(update(UserProfileModel).where(UserProfileModel.user_id == user_id).values(is_active=True))
+        await self._session.commit()
+        result = await self.find_user_by_email((await self._session.scalar(select(UserAccountModel.email).where(UserAccountModel.user_id == user_id))) or "")
+        assert result is not None
+        return result
 
     async def consume_refresh_token(
         self, token_hash: str, consumed_at: datetime
@@ -88,6 +97,7 @@ class SqlAlchemyAuthenticationRepository:
             full_name=full_name,
             password_hash=account.password_hash,
             is_active=account.is_active,
+            account_status=AccountStatus(account.account_status),
             email_verified_at=account.email_verified_at,
             token_version=account.token_version,
             role=role,
