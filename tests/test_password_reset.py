@@ -24,6 +24,9 @@ class FakeAuthenticationRepository:
     async def find_user_by_email(self, email: str) -> AuthenticatedUser | None:
         return self.user if self.user and self.user.email == email else None
 
+    async def reactivate_self_deactivated(self, user_id: UUID) -> AuthenticatedUser:
+        raise NotImplementedError
+
     async def store_refresh_token(self, *args: object) -> None:
         raise NotImplementedError
 
