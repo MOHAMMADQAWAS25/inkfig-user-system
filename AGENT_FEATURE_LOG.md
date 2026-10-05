@@ -2060,7 +2060,6 @@ Support profile editing, password changes, and account deactivation while keepin
 ### Notes
 
 Inactive users cannot authenticate, so self-service deactivation is reversible only by an authorized administrator.
-
 ## 2026-10-06 - Restore settings backend deployment
 
 ### Request
@@ -2111,3 +2110,92 @@ No authentication, authorization, roles, permissions, or account scopes changed.
 ### Notes
 
 The previous production version remained healthy, but correctly returned 404 because it predated the settings router.
+
+## 2026-10-06 - Add social profiles and following
+
+### Request
+
+Allow signed-in users to open other accounts, follow and unfollow them, view follower/following lists with follow controls, and see follower, following, and received-like counters.
+
+### Changes
+
+- Added active, verified social-profile summaries with follower, following, and total published-artwork-like counts.
+- Added idempotent follow/unfollow behavior and prohibited self-following in both the service and database.
+- Added follower and following account lists with viewer-specific follow state.
+- Excluded inactive and unverified target accounts from profile and connection responses.
+- Kept authorization backend-enforced through the existing authenticated profile permission.
+- Added type annotations to the recently added settings tests so the complete suite remains MyPy-clean.
+- Left registration, authentication, administration, and settings behavior unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: owns social profiles, relationships, counters, lists, and authorization.
+- `inkfig-main-system`: exposes published artworks for a selected profile.
+- `inkfig-user-FE`: provides profile navigation and social controls.
+
+### Files
+
+- `migrations/20261006_010_add_user_follows.sql`: creates the follow relation, self-follow constraint, RLS, grants, and directional indexes.
+- `src/entities/dto/social_profile.py`: defines public profile and connection contracts.
+- `src/entities/repositories/social_profile.py`: defines the social repository boundary.
+- `src/app/services/social_profile_service.py`: enforces profile-not-found and no-self-follow rules.
+- `src/infrastructure/repositories/social_profile_repository.py`: implements optimized profile counts, lists, and mutations.
+- `src/interface/api/routes/social_profiles.py`: exposes profile, connection, follow, and unfollow endpoints.
+- `src/interface/dependencies/social_profile.py`: wires the social service.
+- `src/infrastructure/db/postgres/models/user_profile.py`: adds the synchronized follow model.
+- `src/main.py`: registers the social-profile router.
+- `tests/test_social_profiles.py`: covers user scope, follow/unfollow, self-follow prevention, and hidden profiles.
+- `tests/test_query_indexes.py`: verifies both directional follow indexes.
+- `tests/test_settings.py`: completes test-stub typing without changing settings behavior.
+
+### API
+
+- `GET /api/v1/profiles/{user_id}`: returns name, follower count, following count, received-like count, viewer follow state, and self-profile state; returns 404 for unavailable profiles.
+- `GET /api/v1/profiles/{user_id}/followers`: returns active follower accounts and whether the viewer follows each account.
+- `GET /api/v1/profiles/{user_id}/following`: returns active followed accounts and whether the viewer follows each account.
+- `PUT /api/v1/profiles/{user_id}/follow`: idempotently follows an active verified account; returns 409 for self-follow and 404 for unavailable profiles.
+- `DELETE /api/v1/profiles/{user_id}/follow`: idempotently unfollows an account; returns 409 for self-targeting and 404 for unavailable profiles.
+
+### Database
+
+- Migration: `20261006_010_add_user_follows.sql`
+- Adds `user_follows` with a composite primary key, cascading account foreign keys, creation timestamp, and a check preventing self-following.
+- Adds `(follower_user_id, created_at DESC, followed_user_id)` and `(followed_user_id, created_at DESC, follower_user_id)` indexes for ordered lists in both directions.
+- Enables RLS and restricts direct access to the service role. No backfill is required.
+- Rollback drops `user_follows`, permanently removing follow relationships but leaving accounts and artworks unchanged.
+
+### Permissions and scope
+
+- `profile.read_own` is required for profile details, lists, follow, and unfollow operations.
+- User, supervisor, admin, and system-administrator roles with that permission can use the feature.
+- A mutation is always scoped to the authenticated principal as follower; clients cannot submit another follower ID.
+- Target profiles must be active and email-verified. Authorization and scope are validated by the backend.
+
+### Frontend
+
+No frontend changes in this repository. The coordinated UI is in `inkfig-user-FE`.
+
+### Verification
+
+- `[passed] uv run --with-requirements requirements.txt pytest -q — 52 passed`
+- `[passed] uv run --with-requirements requirements.txt mypy src tests — no issues in 95 files`
+- `[passed] ruff check on all changed user-backend files`
+- `[passed] python -m migrations.run — follow migration applied to Supabase`
+- `[passed] live schema query — table, no-self constraint, primary key, and both directional indexes verified`
+
+### Deployment
+
+- Deploy `inkfig-user-system`.
+- Run `20261006_010_add_user_follows.sql` before application deployment; it has already been applied to Supabase.
+- No environment-variable or configuration changes.
+
+### Git
+
+- Branch: `main`
+- Commit: `0729a5d`
+- Push: `successful`
+
+### Notes
+
+- Received likes count only includes likes on published works.
+- Connection lists currently return the complete relationship list; cursor pagination should be added before unusually large accounts require it.
