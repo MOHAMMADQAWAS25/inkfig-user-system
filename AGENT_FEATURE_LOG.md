@@ -1930,3 +1930,74 @@ No frontend files changed in this repository.
 ### Notes
 
 The migration uses conflict-safe inserts so it can run safely in environments where the permission was partially seeded.
+## 2026-10-06 - Optimize user database indexes
+
+### Request
+
+Review and optimize the database and indexing for current InkFig workloads, and make query/index review a standard consideration for future database work.
+
+### Changes
+
+- Added a composite index matching the administrator user-list ordering.
+- Replaced the broad refresh-token user index with a smaller partial index containing only active tokens used by session invalidation.
+- Removed low-selectivity standalone boolean indexes that were not used by current repository queries and added write/storage overhead.
+- Retained unique email, unique phone, pending verification/reset, expiry, rate-limit, and RBAC indexes because they match current constraints or access paths.
+- Left authentication, authorization, API contracts, and frontend behavior unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: optimized account administration and refresh-token indexes.
+- `inkfig-main-system`: coordinated artwork database optimization is recorded in that repository.
+
+### Files
+
+- `migrations/20261006_009_optimize_query_indexes.sql`: added workload-aligned indexes and removed low-value/superseded indexes.
+- `tests/test_query_indexes.py`: added regression coverage for the index migration.
+
+### API
+
+No API changes.
+
+### Database
+
+- Migration: `20261006_009_optimize_query_indexes.sql`
+- Adds `user_accounts(created_at DESC, user_id DESC)` for administration ordering and a partial `refresh_tokens(user_id) WHERE revoked_at IS NULL` index for active-session invalidation.
+- Drops standalone `is_active` indexes and the superseded broad refresh-token user index.
+- No data backfill, constraint, default, or foreign-key changes are required. Rollback can recreate the removed indexes and drop the new ones, with no data loss.
+
+### Permissions and scope
+
+- `users.read` remains required for the administrator user list.
+- Session invalidation remains scoped to the affected user and is performed only through backend-authorized account/role workflows.
+- Role ceilings and backend authorization validation are unchanged.
+
+### Frontend
+
+No frontend changes.
+
+### Verification
+
+- `[passed] uv run --with-requirements requirements.txt pytest -q — 46 passed`
+- `[passed] uv run --with-requirements requirements.txt mypy src tests — no issues in 79 files`
+- `[passed] uv run --with-requirements requirements.txt ruff check tests/test_query_indexes.py`
+- `[passed] uv run --with-requirements requirements.txt python -m compileall -q src tests`
+- `[passed] python -m migrations.run — migration applied to Supabase`
+- `[passed] live pg_indexes query — administrator and active refresh-token indexes verified on Supabase`
+- `[failed] uv run --with-requirements requirements.txt ruff check src tests — unrelated pre-existing repository-wide formatting and lint findings`
+
+### Deployment
+
+- Deploy `inkfig-user-system`.
+- Run `20261006_009_optimize_query_indexes.sql` before deploying the application; it has already been applied to the configured Supabase database.
+- No environment-variable or configuration changes.
+
+### Git
+
+- Branch: `main`
+- Commit: `09bf7a2`
+- Push: `successful`
+
+### Notes
+
+- Future database tickets must compare query predicates, join direction, ordering, and pagination with existing indexes and avoid redundant or low-selectivity indexes.
+- Query plans should be reassessed using production-scale statistics as table cardinality grows; small tables may correctly use sequential scans despite having suitable indexes.
