@@ -1864,3 +1864,69 @@ No frontend changes in this repository.
 ### Notes
 
 Role/status changes force refresh-session revocation; the short-lived access cookie expires within 15 minutes.
+
+## 2026-10-05 - Grant artwork save permission
+
+### Request
+
+Allow registered users, but not viewer-only accounts, to save and unsave published artwork.
+
+### Changes
+
+- Added the works.save permission through an append-only RBAC migration.
+- Granted it to user, supervisor, admin, and system-administrator roles.
+- Intentionally excluded viewer accounts.
+- Added regression coverage for the permission grants and exclusion.
+
+### Repositories
+
+- inkfig-user-system: save permission migration and test.
+- inkfig-main-system: enforces the permission in paired save endpoints.
+- inkfig-user-FE: displays save controls only when the signed session contains works.save.
+
+### Files
+
+- migrations/20261005_008_add_work_save_permission.sql: seeds works.save and registered-role grants idempotently.
+- tests/test_rbac_migration.py: verifies the intended grants and viewer exclusion.
+- AGENT_FEATURE_LOG.md: records this ticket.
+
+### API
+
+No route contract changes in this repository. Newly issued/refreshed session claims include works.save for granted roles.
+
+### Database
+
+- Migration: migrations/20261005_008_add_work_save_permission.sql.
+- Adds one permission and four idempotent role-permission mappings.
+
+### Permissions and scope
+
+- user, supervisor, admin, and system_administrator receive works.save.
+- viewer does not receive works.save.
+- Existing signed-token validation and role hierarchy remain unchanged.
+
+### Frontend
+
+No frontend files changed in this repository.
+
+### Verification
+
+- [passed] git diff --check
+- [passed] focused static review of the idempotent permission seed and role grants.
+- [not run] pytest, mypy, Ruff, and compileall - no usable Python runtime or project runner is installed in this session.
+
+### Deployment
+
+- Apply migration 20261005_008_add_work_save_permission.sql and deploy inkfig-user-system before the main-system save endpoints and frontend.
+- Existing users must refresh or sign in again to receive the new signed permission claim.
+- No new environment variables or secrets are required.
+
+### Git
+
+- Branch: main
+- Commit: this ticket's focused commit.
+- Push: pushed directly to origin/main after synchronization.
+
+### Notes
+
+The migration uses conflict-safe inserts so it can run safely in environments where the permission was partially seeded.
