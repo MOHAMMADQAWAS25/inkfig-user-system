@@ -2613,3 +2613,68 @@ No frontend changes.
 ### Notes
 
 The initial production request returned the old 422 validation response until the deployment completed; the live endpoint then returned HTTP 200. The plaintext password is intentionally omitted.
+
+## 2026-10-07 - Permit administrators to delete works
+
+### Request
+
+Allow system administrators and administrators to delete any work while requiring a written deletion reason.
+
+### Changes
+
+- Added the `works.delete_any` permission to the authorization catalog.
+- Assigned the permission only to the `admin` and `system_administrator` roles.
+- Left viewer, user, and supervisor permissions unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: added and tested the moderation permission assignment.
+- `inkfig-main-system`: added the protected deletion endpoint and persistent audit record.
+- `inkfig-user-FE`: added permission-gated deletion controls and reason dialog.
+
+### Files
+
+- `migrations/20261007_014_add_work_moderation_permission.sql`: creates and assigns the permission.
+- `tests/test_work_moderation_permission.py`: verifies the permission is restricted to the two administrator roles.
+
+### API
+
+No API changes in this repository. JWT permission claims now include `works.delete_any` after the user signs in or refreshes authentication.
+
+### Database
+
+- Migration: `20261007_014_add_work_moderation_permission.sql`
+- Adds the idempotent permission and role-permission rows for `admin` and `system_administrator`; rollback can remove those assignments and the permission after dependent deployments are removed.
+
+### Permissions and scope
+
+- Required permission: `works.delete_any`.
+- Only `admin` and `system_administrator` receive it.
+- Authorization is validated by the main backend; lower roles remain unable to call the moderation endpoint.
+
+### Frontend
+
+- The frontend uses this permission to display the administrative delete control.
+
+### Verification
+
+- `[passed] uv run --with-requirements requirements.txt pytest -q` — 66 tests passed.
+- `[passed] focused Ruff check and mypy for the new permission test`
+- `[failed] whole-tree mypy` — pre-existing missing asyncpg stubs in `migrations/run.py`.
+- `[passed] migration runner applied 20261007_014_add_work_moderation_permission.sql`
+
+### Deployment
+
+- Deploy `inkfig-user-system` before the main API and frontend.
+- Migration has already run against the configured Supabase database.
+- No environment-variable changes.
+
+### Git
+
+- Branch: `main`
+- Commit: `65de4fa`
+- Push: `successful`
+
+### Notes
+
+Existing browser sessions should sign out and sign in again so both the JWT and frontend session contain the new permission.
