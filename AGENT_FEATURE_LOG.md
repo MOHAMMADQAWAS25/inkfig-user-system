@@ -2485,3 +2485,65 @@ No frontend changes.
 ### Notes
 
 The plaintext password was not written to any repository file or feature log. Existing local `samconfig.toml` and untracked `aws` items were intentionally left unchanged.
+
+## 2026-10-07 - Bootstrap the initial system administrator
+
+### Request
+
+Create the initial verified InkFig system-administrator account using the user-provided profile and replacement unique phone number.
+
+### Changes
+
+- Created the administrator account through the secure bootstrap command.
+- Stored only the PBKDF2 password hash and did not persist the plaintext password in configuration, source control, or logs.
+- Created an active, email-verified profile and assigned the `system_administrator` role transactionally.
+- Used phone number `0598500140` after earlier supplied numbers were rejected because they belonged to existing accounts.
+- Intentionally left all existing users and their phone numbers unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: bootstrapped the production administrator record and documented the operation.
+
+### Files
+
+- `AGENT_FEATURE_LOG.md`: recorded the successful bootstrap operation.
+
+### API
+
+No API changes.
+
+### Database
+
+- Migration: `No migration required`
+- Inserted one active, verified user account and profile and assigned its existing `system_administrator` role.
+- Existing schema, constraints, indexes, foreign keys, and other user records were unchanged.
+
+### Permissions and scope
+
+- The new account has the existing `system_administrator` role and its configured permissions.
+- The operation used trusted direct database credentials and is not exposed through a public endpoint.
+- Backend role and permission checks remain authoritative.
+
+### Frontend
+
+No frontend changes.
+
+### Verification
+
+- `[passed] secure bootstrap command - created a verified system administrator transactionally`
+- `[passed] phone uniqueness enforcement - accepted the replacement number without modifying existing accounts`
+- `[not run] production UI login - credentials were not entered into a browser during this operation`
+
+### Deployment
+
+- No deployment, migration, environment-variable, or configuration change is required.
+
+### Git
+
+- Branch: `main`
+- Commit: `b5430e3`
+- Push: `successful`
+
+### Notes
+
+The plaintext password is intentionally omitted. Existing local `samconfig.toml` and untracked `aws` items remain untouched.
