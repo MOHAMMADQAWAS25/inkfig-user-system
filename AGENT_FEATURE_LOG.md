@@ -2208,3 +2208,76 @@ Implemented `active`, `self_deactivated`, and `admin_suspended` account states. 
 - Verification: `git diff --check` passed; focused tests added/updated; Python tooling unavailable locally.
 - Deployment: deploy this repository and migration before the main backend and frontend.
 - Branch: `feature/account-status-lifecycle`; push to `main` after synchronization.
+## 2026-10-07 - Add live account discovery for artwork search
+
+### Request
+
+Allow the frontend search bar to discover accounts live after `@`, so an explicitly selected account can scope artwork results by its immutable user ID.
+
+### Changes
+
+- Added normalized, case-insensitive partial-name account search with prefix matches ordered first.
+- Returns only minimal public identity fields for active, verified profiles.
+- Added a trigram index for responsive partial-name matching.
+- Left profile details, follow workflows, authentication, and private profile fields unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: account-search API, repository query, service contract, migration, and tests.
+- `inkfig-main-system`: consumes the selected user ID as an artwork owner filter.
+- `inkfig-user-FE`: provides the live `@` selector and submits the selected user ID.
+
+### Files
+
+- `src/entities/dto/social_profile.py`: adds privacy-safe account-search response models.
+- `src/entities/repositories/social_profile.py`: adds the account-search repository contract.
+- `src/app/services/social_profile_service.py`: normalizes live name queries.
+- `src/infrastructure/repositories/social_profile_repository.py`: searches active verified profiles with deterministic ordering.
+- `src/interface/api/routes/social_profiles.py`: exposes the live search endpoint before the dynamic profile route.
+- `migrations/20261007_012_add_profile_name_search_index.sql`: adds pg_trgm and the active-profile name index.
+- `tests/test_social_profiles.py`: verifies query normalization and result flow.
+
+### API
+
+- `GET /api/v1/profiles/search`: accepts `query` from 1 to 120 characters and `limit` from 1 to 20 (default 8); returns `user_id` and `full_name` for active, email-verified profiles, ordered by prefix match then name. It exposes no email, phone number, role, or other private fields.
+
+### Database
+
+- Migration: `20261007_012_add_profile_name_search_index.sql`
+- Enables `pg_trgm` when absent and creates the partial GIN index `user_profiles_full_name_trgm_idx` on `lower(full_name)` for active profiles. No backfill or data rewrite is required. Rollback may drop the index; the extension should only be dropped after confirming no other database object uses it.
+
+### Permissions and scope
+
+- No authenticated permission is required because this endpoint returns only the same minimal identity needed for public artwork discovery.
+- Viewer, user, supervisor, admin, and system-administrator clients can discover active verified accounts.
+- Suspended, self-deactivated, inactive, unverified, and missing accounts are excluded by the backend query.
+
+### Frontend
+
+- The coordinated frontend adds a debounced dropdown below the home search bar with keyboard, mouse, touch, RTL/LTR, theme, loading, empty, and responsive behavior.
+- A backend owner filter is created only after an account result is explicitly selected.
+
+### Verification
+
+- `[passed] uv run --with-requirements requirements.txt pytest -q - 55 passed`
+- `[passed] uv run --with-requirements requirements.txt mypy src tests - no issues in 96 source files`
+- `[passed] focused ruff check for changed user-backend files`
+- `[passed] uv run --env-file .env --with-requirements requirements.txt python -m migrations.run - migration applied to Supabase`
+- `[passed] git diff --check`
+- `[failed] full-repository ruff check - 32 pre-existing lint findings exist outside this ticket; changed files pass focused lint`
+
+### Deployment
+
+- Deploy `inkfig-user-system` before the main backend and frontend.
+- Migration `20261007_012_add_profile_name_search_index.sql` must run before deployment and has already been applied to Supabase.
+- No environment-variable or configuration changes are required.
+
+### Git
+
+- Branch: `main`
+- Commit: `6d109c8`
+- Push: `successful`
+
+### Notes
+
+The public response intentionally excludes browser-local avatars because the system has no shared backend avatar contract yet.
