@@ -29,6 +29,7 @@ class SocialProfileRepositoryStub:
         return PublicProfileResponse(
             user_id=profile_user_id,
             full_name="InkFig Artist",
+            avatar_url=None,
             follower_count=3,
             following_count=2,
             like_count=9,

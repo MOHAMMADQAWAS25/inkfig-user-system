@@ -6,6 +6,7 @@ from pydantic import BaseModel
 class PublicProfileResponse(BaseModel):
     user_id: UUID
     full_name: str
+    avatar_url: str | None = None
     follower_count: int
     following_count: int
     like_count: int
@@ -16,6 +17,7 @@ class PublicProfileResponse(BaseModel):
 class ProfileAccountSummary(BaseModel):
     user_id: UUID
     full_name: str
+    avatar_url: str | None = None
     is_following: bool
 
 

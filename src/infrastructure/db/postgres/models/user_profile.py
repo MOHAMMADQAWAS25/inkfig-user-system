@@ -20,6 +20,7 @@ class UserProfileModel(Base):
     phone_number: Mapped[str] = mapped_column(String(16), nullable=False)
     gender: Mapped[str] = mapped_column(String(16), nullable=False)
     date_of_birth: Mapped[date] = mapped_column(Date, nullable=False)
+    avatar_object_path: Mapped[str | None] = mapped_column(String(512))
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(

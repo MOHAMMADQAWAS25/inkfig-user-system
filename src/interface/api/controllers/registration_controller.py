@@ -17,7 +17,7 @@ class RegistrationController:
         return await self._registration_service.register(request)
 
     async def verify_email(self, request: VerifyEmailRequest) -> VerifyEmailResponse:
-        return await self._registration_service.verify_email(request.email, request.code)
+        return await self._registration_service.verify_email(request.email, request.code, request.avatar_object_path)
 
     async def resend_verification(
         self, request: ResendVerificationRequest

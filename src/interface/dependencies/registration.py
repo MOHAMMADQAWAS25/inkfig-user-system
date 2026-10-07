@@ -15,12 +15,16 @@ from src.infrastructure.repositories.email_code_rate_limit_repository import (
     SqlAlchemyEmailCodeRateLimitRepository,
 )
 from src.interface.api.controllers.registration_controller import RegistrationController
+from src.app.services.profile_avatar_service import ProfileAvatarService
+from src.infrastructure.integrations.supabase_avatar_storage import SupabaseAvatarStorage
+from src.infrastructure.repositories.profile_avatar_repository import SqlAlchemyProfileAvatarRepository
 
 
 def get_registration_service(
     session: Annotated[AsyncSession, Depends(get_database_session)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> RegistrationService:
+    avatar_storage = SupabaseAvatarStorage(settings.supabase_url, settings.supabase_secret_key, settings.profile_avatars_bucket)
     return RegistrationService(
         profile_repository=SqlAlchemyUserProfileRepository(session),
         email_gateway=BrevoVerificationEmailGateway(
@@ -37,6 +41,7 @@ def get_registration_service(
         rate_limit_repository=SqlAlchemyEmailCodeRateLimitRepository(session),
         max_sends_per_hour=settings.email_code_max_sends_per_hour,
         hourly_block_seconds=settings.email_code_hourly_block_seconds,
+        avatar_service=ProfileAvatarService(SqlAlchemyProfileAvatarRepository(session), avatar_storage),
     )
 
 

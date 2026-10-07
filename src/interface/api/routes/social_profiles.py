@@ -9,6 +9,8 @@ from src.entities.dto.social_profile import (
     ProfileSearchResponse,
     PublicProfileResponse,
 )
+from src.entities.dto.profile_avatar import AvatarResponse, AvatarUploadRequest, AvatarUploadResponse, CompleteAvatarUploadRequest
+from src.entities.exceptions.profile_avatar import AvatarStorageError, AvatarUploadNotFoundError, UnsupportedAvatarError
 from src.entities.exceptions.social_profile import (
     CannotFollowSelfError,
     ProfileNotFoundError,
@@ -26,6 +28,32 @@ async def search_profiles(
     limit: int = Query(8, ge=1, le=20),
 ) -> ProfileSearchResponse:
     return ProfileSearchResponse(items=await service.search_profiles(query, limit))
+@router.post("/avatar-uploads", response_model=AvatarUploadResponse, status_code=201)
+async def prepare_avatar_upload(
+    request: AvatarUploadRequest,
+    principal: Annotated[Principal, Depends(require_permission("profile.read_own"))],
+    service: Annotated[SocialProfileService, Depends(get_social_profile_service)],
+) -> AvatarUploadResponse:
+    try:
+        return await service.prepare_avatar_upload(principal.user_id, request)
+    except UnsupportedAvatarError as error:
+        raise HTTPException(422, "Choose a JPEG, PNG, or WebP image up to 2 MB.") from error
+    except AvatarStorageError as error:
+        raise HTTPException(503, "Avatar storage is temporarily unavailable.") from error
+
+
+@router.post("/avatar-uploads/complete", response_model=AvatarResponse)
+async def complete_avatar_upload(
+    request: CompleteAvatarUploadRequest,
+    principal: Annotated[Principal, Depends(require_permission("profile.read_own"))],
+    service: Annotated[SocialProfileService, Depends(get_social_profile_service)],
+) -> AvatarResponse:
+    try:
+        return await service.complete_avatar_upload(principal.user_id, request.object_path)
+    except AvatarUploadNotFoundError as error:
+        raise HTTPException(404, "The uploaded avatar was not found.") from error
+    except AvatarStorageError as error:
+        raise HTTPException(503, "Avatar storage is temporarily unavailable.") from error
 
 
 @router.get("/{user_id}", response_model=PublicProfileResponse)

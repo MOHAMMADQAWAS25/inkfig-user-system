@@ -14,6 +14,8 @@ from src.entities.dto.registration import (
     UserProfileCreate,
     VerifyEmailResponse,
 )
+from src.entities.dto.profile_avatar import AvatarUploadRequest, AvatarUploadResponse
+from src.app.services.profile_avatar_service import ProfileAvatarService
 from src.entities.exceptions.email_code_rate_limit import EmailCodeRateLimitExceededError
 from src.entities.exceptions.registration import (
     VerificationAttemptsExceededError,
@@ -43,6 +45,7 @@ class RegistrationService:
         rate_limit_repository: EmailCodeRateLimitRepository | None = None,
         max_sends_per_hour: int = 5,
         hourly_block_seconds: int = 3600,
+        avatar_service: ProfileAvatarService | None = None,
     ) -> None:
         if not hash_secret:
             raise RuntimeError("A verification hash secret is required.")
@@ -56,11 +59,12 @@ class RegistrationService:
         self._rate_limit_repository = rate_limit_repository
         self._max_sends_per_hour = max_sends_per_hour
         self._hourly_block_seconds = hourly_block_seconds
+        self._avatar_service = avatar_service
 
     async def register(self, request: RegisterUserRequest) -> RegisterUserResponse:
         pending = await self._profile_repository.get_pending_verification(request.email)
         if pending is not None:
-            return await self._resume_pending_registration(pending)
+            return await self._resume_pending_registration(pending, request)
         legacy_user_id = await self._profile_repository.get_recoverable_legacy_user_id(
             request.email
         )
@@ -87,15 +91,17 @@ class RegistrationService:
         await self._email_gateway.send_verification_code(
             request.email, request.full_name, code, self._code_ttl_minutes
         )
+        avatar_upload = await self._prepare_avatar(user_id, request)
         return RegisterUserResponse(
             email=request.email,
             expires_in_seconds=self._code_ttl_minutes * 60,
             resend_after_seconds=rate.retry_after_seconds,
             hourly_limit_reached=rate.hourly_limit_reached,
+            avatar_upload=avatar_upload,
         )
 
     async def _resume_pending_registration(
-        self, challenge: PendingEmailVerification
+        self, challenge: PendingEmailVerification, request: RegisterUserRequest
     ) -> RegisterUserResponse:
         now = datetime.now(timezone.utc)
         resend_available_at = challenge.sent_at + timedelta(
@@ -125,9 +131,10 @@ class RegistrationService:
             expires_in_seconds=expires_in_seconds,
             resend_after_seconds=resend_after_seconds,
             hourly_limit_reached=hourly_limit_reached,
+            avatar_upload=await self._prepare_avatar(challenge.user_id, request),
         )
 
-    async def verify_email(self, email: str, code: str) -> VerifyEmailResponse:
+    async def verify_email(self, email: str, code: str, avatar_object_path: str | None = None) -> VerifyEmailResponse:
         challenge = await self._profile_repository.get_pending_verification(email)
         if challenge is None:
             raise VerificationNotFoundError
@@ -141,10 +148,24 @@ class RegistrationService:
             if challenge.attempts + 1 >= challenge.max_attempts:
                 raise VerificationAttemptsExceededError
             raise VerificationCodeInvalidError
+        if avatar_object_path is not None and self._avatar_service is not None:
+            await self._avatar_service.complete_upload(challenge.user_id, avatar_object_path)
         await self._profile_repository.activate_verified_user(
             challenge.verification_id, challenge.user_id, now
         )
         return VerifyEmailResponse(email=email)
+
+    async def _prepare_avatar(self, user_id: UUID, request: RegisterUserRequest) -> AvatarUploadResponse | None:
+        if self._avatar_service is None or request.avatar_file_name is None or request.avatar_mime_type is None or request.avatar_file_size is None:
+            return None
+        return await self._avatar_service.prepare_upload(
+            user_id,
+            AvatarUploadRequest(
+                file_name=request.avatar_file_name,
+                mime_type=request.avatar_mime_type,
+                file_size=request.avatar_file_size,
+            ),
+        )
 
     async def resend_verification(self, email: str) -> ResendVerificationResponse:
         challenge = await self._profile_repository.get_pending_verification(email)

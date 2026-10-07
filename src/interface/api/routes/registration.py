@@ -26,6 +26,7 @@ from src.entities.exceptions.registration import (
 )
 from src.interface.api.controllers.registration_controller import RegistrationController
 from src.interface.dependencies.registration import get_registration_controller
+from src.entities.exceptions.profile_avatar import AvatarStorageError, AvatarUploadNotFoundError, UnsupportedAvatarError
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -69,6 +70,10 @@ async def register_user(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The verification email could not be sent.",
         ) from error
+    except UnsupportedAvatarError as error:
+        raise HTTPException(status_code=422, detail="Choose a JPEG, PNG, or WebP image up to 2 MB.") from error
+    except AvatarStorageError as error:
+        raise HTTPException(status_code=503, detail="Avatar storage is temporarily unavailable.") from error
 
 
 @router.post("/verify-email", response_model=VerifyEmailResponse)
@@ -88,6 +93,10 @@ async def verify_email(
         raise HTTPException(status_code=404, detail="No pending verification was found.") from error
     except RegistrationProviderError as error:
         raise HTTPException(status_code=503, detail="Verification is temporarily unavailable.") from error
+    except AvatarUploadNotFoundError as error:
+        raise HTTPException(status_code=400, detail="The selected profile picture was not uploaded.") from error
+    except AvatarStorageError as error:
+        raise HTTPException(status_code=503, detail="Avatar storage is temporarily unavailable.") from error
 
 
 @router.post("/resend-verification", response_model=ResendVerificationResponse)

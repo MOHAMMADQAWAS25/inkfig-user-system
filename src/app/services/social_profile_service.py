@@ -10,11 +10,24 @@ from src.entities.exceptions.social_profile import (
     ProfileNotFoundError,
 )
 from src.entities.repositories.social_profile import SocialProfileRepository
+from src.app.services.profile_avatar_service import ProfileAvatarService
+from src.entities.dto.profile_avatar import AvatarResponse, AvatarUploadRequest, AvatarUploadResponse
 
 
 class SocialProfileService:
-    def __init__(self, repository: SocialProfileRepository) -> None:
+    def __init__(self, repository: SocialProfileRepository, avatar_service: ProfileAvatarService | None = None) -> None:
         self._repository = repository
+        self._avatar_service = avatar_service
+
+    async def prepare_avatar_upload(self, user_id: UUID, data: AvatarUploadRequest) -> AvatarUploadResponse:
+        if self._avatar_service is None:
+            raise RuntimeError("Avatar uploads are not configured.")
+        return await self._avatar_service.prepare_upload(user_id, data)
+
+    async def complete_avatar_upload(self, user_id: UUID, object_path: str) -> AvatarResponse:
+        if self._avatar_service is None:
+            raise RuntimeError("Avatar uploads are not configured.")
+        return await self._avatar_service.complete_upload(user_id, object_path)
 
     async def search_profiles(self, query: str, limit: int) -> list[ProfileSearchResult]:
         normalized = " ".join(query.split())

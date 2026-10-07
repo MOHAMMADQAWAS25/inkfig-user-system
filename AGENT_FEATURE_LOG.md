@@ -2281,3 +2281,62 @@ Allow the frontend search bar to discover accounts live after `@`, so an explici
 ### Notes
 
 The public response intentionally excludes browser-local avatars because the system has no shared backend avatar contract yet.
+
+## 2026-10-07 - Add persistent profile-avatar uploads
+
+### Request
+
+Persist profile pictures through the backend using production-safe upload practices, support optional selection during signup, and retain a first-initial fallback when no picture is provided.
+
+### Changes
+
+- Added a two-phase direct-to-Supabase upload lifecycle with backend-issued signed URLs and backend completion checks.
+- Restricted authenticated avatar preparation/completion to principals with `profile.read_own`; object paths are always scoped to the authenticated user UUID.
+- Added optional avatar metadata to signup. The pending user receives a scoped signed upload, and the avatar is claimed only with the valid email-verification challenge.
+- Validates JPEG, PNG, and WebP metadata, a 2 MB limit, uploaded object content type/length, object existence, and user-path ownership.
+- Stores only the object path in PostgreSQL, derives the public URL server-side, and best-effort deletes the previous object after replacement.
+- Added nullable avatar URLs to public profiles and connection summaries; missing values deliberately produce the frontend first-letter fallback.
+- Added Supabase bucket/configuration wiring and focused service tests.
+
+### Repositories
+
+- `inkfig-user-system`: storage integration, API lifecycle, signup/verification integration, schema, tests, deployment configuration, and this log.
+- `inkfig-user-FE`: coordinated optional signup picker and persistent profile display/update.
+- `inkfig-main-system`: no changes; its signed artwork-upload pattern was reused as the architectural reference.
+
+### API
+
+- `POST /api/v1/profiles/avatar-uploads`: prepares an authenticated, owner-scoped signed upload.
+- `POST /api/v1/profiles/avatar-uploads/complete`: verifies and persists an authenticated upload.
+- `POST /api/v1/auth/signup`: accepts optional avatar file metadata and can return `avatar_upload`.
+- `POST /api/v1/auth/verify-email`: accepts the optional uploaded object path and binds it to the verified account.
+- Profile responses now include nullable `avatar_url`.
+
+### Database
+
+- Migration: `20261007_012_add_profile_avatars.sql`.
+- Adds nullable `user_profiles.avatar_object_path` and the public `profile-avatars` bucket with a 2 MB limit and JPEG/PNG/WebP allowlist.
+- No backfill is needed; null values retain the first-initial fallback.
+
+### Permissions and SnapStart
+
+- Backend ownership and `profile.read_own` authorization are enforced before authenticated avatar mutations.
+- Signup claims are bound to the pending user's email-verification challenge and UUID-scoped object path.
+- Storage clients are created through FastAPI dependencies per request; no network connection is opened during Lambda module initialization, preserving SnapStart compatibility.
+
+### Verification
+
+- `[passed] git diff --check`.
+- `[added] focused avatar service tests` - covers scoped paths, replacement cleanup, unsupported MIME types, and foreign-path rejection.
+- `[not run] pytest and mypy` - no working Python interpreter is installed in this environment.
+- `[not run] SAM validation` - AWS SAM CLI is not installed in this environment.
+
+### Deployment
+
+- Run `20261007_012_add_profile_avatars.sql`, then deploy `inkfig-user-system`, then deploy `inkfig-user-FE`.
+- Provide `SupabaseUrl` and `SupabaseSecretKey` to the user-system SAM deployment; keep the service-role secret backend-only.
+
+### Git
+
+- Branch: `feature/profile-avatar-upload`
+- Commit, rebase, push, merge, and main push: pending final synchronization.

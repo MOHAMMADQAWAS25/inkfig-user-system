@@ -22,6 +22,11 @@ Parameters:
     Type: String
     NoEcho: true
     Description: SQLAlchemy asyncpg URL using the Supabase Session Pooler.
+  SupabaseUrl:
+    Type: String
+  SupabaseSecretKey:
+    Type: String
+    NoEcho: true
   CertificateArn:
     Type: String
     Description: ACM certificate ARN for user-api.inkfig-hu.com in the deployment region.
@@ -55,6 +60,9 @@ Globals:
         API_PREFIX: /api/v1
         CORS_ORIGINS: !Ref CorsOrigins
         DATABASE_URL: !Ref DatabaseUrl
+        SUPABASE_URL: !Ref SupabaseUrl
+        SUPABASE_SECRET_KEY: !Ref SupabaseSecretKey
+        PROFILE_AVATARS_BUCKET: profile-avatars
         JWT_SECRET: !Ref JwtSecret
         JWT_ISSUER: inkfig-user-system
         ACCESS_TOKEN_MINUTES: 15

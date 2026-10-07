@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.entities.enums.gender import Gender
+from src.entities.dto.profile_avatar import AvatarUploadResponse
 
 
 STUDENT_EMAIL_PATTERN = re.compile(r"^\d{8}@students\.hebron\.edu$")
@@ -22,6 +23,9 @@ class RegisterUserRequest(BaseModel):
     date_of_birth: date
     password: str = Field(min_length=8, max_length=128)
     password_confirmation: str = Field(min_length=8, max_length=128)
+    avatar_file_name: str | None = Field(default=None, max_length=255)
+    avatar_mime_type: str | None = Field(default=None, max_length=100)
+    avatar_file_size: int | None = Field(default=None, gt=0, le=2 * 1024 * 1024)
 
     @field_validator("email")
     @classmethod
@@ -64,6 +68,9 @@ class RegisterUserRequest(BaseModel):
     def validate_password_confirmation(self) -> "RegisterUserRequest":
         if self.password != self.password_confirmation:
             raise ValueError("Password and password confirmation must match.")
+        avatar_values = (self.avatar_file_name, self.avatar_mime_type, self.avatar_file_size)
+        if any(value is not None for value in avatar_values) and not all(value is not None for value in avatar_values):
+            raise ValueError("Avatar file metadata must be complete.")
         return self
 
 
@@ -113,11 +120,13 @@ class RegisterUserResponse(BaseModel):
     expires_in_seconds: int
     resend_after_seconds: int
     hourly_limit_reached: bool = False
+    avatar_upload: AvatarUploadResponse | None = None
 
 
 class VerifyEmailRequest(BaseModel):
     email: str = Field(min_length=1, max_length=254)
     code: str = Field(pattern=r"^[0-9]{6}$")
+    avatar_object_path: str | None = Field(default=None, max_length=512)
 
     @field_validator("email")
     @classmethod

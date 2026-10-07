@@ -8,11 +8,12 @@ from src.entities.dto.social_profile import (
     ProfileSearchResult,
     PublicProfileResponse,
 )
+from src.entities.repositories.profile_avatar import ProfileAvatarStorage
 
 
 class SqlAlchemySocialProfileRepository:
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
+    def __init__(self, session: AsyncSession, storage: ProfileAvatarStorage) -> None:
+        self._session, self._storage = session, storage
 
     async def search_profiles(
         self, query: str, limit: int
@@ -52,6 +53,7 @@ class SqlAlchemySocialProfileRepository:
                     select
                         p.user_id,
                         p.full_name,
+                        p.avatar_object_path,
                         (select count(*) from user_follows f join user_accounts fa on fa.user_id = f.follower_user_id
                          where f.followed_user_id = p.user_id and fa.account_status = 'active') as follower_count,
                         (select count(*) from user_follows f join user_accounts fa on fa.user_id = f.followed_user_id
@@ -84,6 +86,7 @@ class SqlAlchemySocialProfileRepository:
         return PublicProfileResponse(
             user_id=row.user_id,
             full_name=row.full_name,
+            avatar_url=self._storage.public_url(row.avatar_object_path) if row.avatar_object_path else None,
             follower_count=row.follower_count,
             following_count=row.following_count,
             like_count=row.like_count,
@@ -132,6 +135,7 @@ class SqlAlchemySocialProfileRepository:
                     select
                         p.user_id,
                         p.full_name,
+                        p.avatar_object_path,
                         exists (
                             select 1 from user_follows mine
                             where mine.follower_user_id = :viewer_user_id
@@ -157,6 +161,7 @@ class SqlAlchemySocialProfileRepository:
             ProfileAccountSummary(
                 user_id=row.user_id,
                 full_name=row.full_name,
+                avatar_url=self._storage.public_url(row.avatar_object_path) if row.avatar_object_path else None,
                 is_following=row.is_following,
             )
             for row in rows
