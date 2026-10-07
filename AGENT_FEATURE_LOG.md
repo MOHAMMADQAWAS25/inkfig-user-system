@@ -2412,3 +2412,76 @@ Support a navigation-side account search panel that searches names live from the
 ### Notes
 
 The cursor is bounded to 10,000 results to prevent unbounded offsets. Existing local `samconfig.toml` and untracked `aws` items were intentionally left unchanged.
+
+## 2026-10-07 - Add secure system-administrator bootstrap
+
+### Request
+
+Create a verified `system_administrator` account without storing its plaintext password in `.env`, source control, or logs.
+
+### Changes
+
+- Added a reusable command that accepts administrator profile fields as arguments and reads the password and confirmation through hidden prompts.
+- Hashes passwords with the existing PBKDF2 implementation and creates or repairs the account, verified profile, active status, and system-administrator role in one transaction.
+- Revokes existing sessions and clears obsolete verification/reset challenges when repairing an existing account.
+- Rejects conflicting phone ownership instead of overwriting another user's profile.
+- Limited the external-email exception to the explicitly authorized administrator address; all other stored accounts remain restricted to Hebron University domains.
+- Intentionally did not create the requested account because its supplied phone number already belongs to another account.
+
+### Repositories
+
+- `inkfig-user-system`: secure bootstrap command, narrowly scoped schema migration, tests, and this log.
+
+### Files
+
+- `migrations/20261007_013_allow_external_administrator_emails.sql`: permits the authorized administrator email while retaining Hebron constraints for all other addresses.
+- `scripts/create_system_admin.py`: validates profile data, securely prompts for a password, hashes it, and transactionally bootstraps the administrator.
+- `scripts/__init__.py`: makes operational commands executable as Python modules.
+- `tests/test_system_admin_bootstrap.py`: covers validation, password-prompt safety, and migration scope.
+- `AGENT_FEATURE_LOG.md`: records the implementation and the phone-conflict blocker.
+
+### API
+
+No API changes.
+
+### Database
+
+- Migration: `20261007_013_allow_external_administrator_emails.sql`
+- Replaces the two Hebron-only email checks with equivalent checks that additionally allow only the explicitly authorized external administrator email.
+- Unique email and phone indexes, foreign keys, defaults, roles, and existing rows are unchanged.
+- The migration was applied successfully to Supabase; rollback should restore the former Hebron-only constraints after removing any external administrator row.
+
+### Permissions and scope
+
+- The bootstrap assigns only the `system_administrator` role and requires direct trusted database credentials.
+- It is not exposed through an HTTP endpoint and does not change public signup authorization or validation.
+- Public signup remains restricted to supported Hebron University email formats and backend authorization remains authoritative.
+
+### Frontend
+
+No frontend changes.
+
+### Verification
+
+- `[passed] uv run --with-requirements requirements.txt pytest -q - 64 tests passed`
+- `[passed] uv run --with ruff ruff check scripts/create_system_admin.py tests/test_system_admin_bootstrap.py`
+- `[passed] uv run --with-requirements requirements.txt mypy scripts/create_system_admin.py tests/test_system_admin_bootstrap.py`
+- `[passed] git diff --check`
+- `[passed] python -m migrations.run - migration applied to Supabase`
+- `[failed] administrator bootstrap - supplied phone number already belongs to another account; transaction rolled back without overwriting data`
+
+### Deployment
+
+- Deploy `inkfig-user-system` so the bootstrap source and migration history match production.
+- The migration has already run; no new environment variables are required.
+- Run the bootstrap again after receiving an unused phone number or explicit authorization to transfer the existing number.
+
+### Git
+
+- Branch: `main`
+- Commit: `b5430e3`
+- Push: `successful`
+
+### Notes
+
+The plaintext password was not written to any repository file or feature log. Existing local `samconfig.toml` and untracked `aws` items were intentionally left unchanged.
