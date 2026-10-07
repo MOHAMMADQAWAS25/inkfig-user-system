@@ -2708,3 +2708,72 @@ Notify users across devices when another user follows them or likes or saves one
 
 - Deploy this migration and user service before `inkfig-main-system` and `inkfig-user-FE`.
 - Branch: `feature/full-notifications`; commit/push pending final synchronization.
+
+## 2026-10-08 - Unblock notification deployment
+
+### Request
+
+Fix the notification system after users could not receive notifications in production.
+
+### Changes
+
+- Reproduced the failed production workflow locally and identified a brittle notification-route source-text assertion as the only failing test.
+- Replaced the decorator-string assertion with registration checks against FastAPI's actual `APIRoute` collection.
+- Verifies that the notification feed is registered for `GET` and the read-state endpoint is registered for `PUT` at their production API paths.
+- Left the notification API, event writers, database schema, authorization, frontend contract, and unrelated behavior unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: corrected and strengthened the test that blocked its notification migration and deployment.
+- `inkfig-main-system`: inspected; no source change required because its like/save notification writers are already deployed.
+- `inkfig-user-FE`: inspected; no source change required because its notification client and interface are already deployed.
+
+### Files
+
+- `tests/test_notifications.py`: verifies real route registration instead of formatting-dependent source text.
+- `AGENT_FEATURE_LOG.md`: records this deployment repair.
+
+### API
+
+No API contract changes. Existing endpoints remain:
+
+- `GET /api/v1/notifications`
+- `PUT /api/v1/notifications/read`
+
+### Database
+
+- Existing pending migration: `20261008_015_create_notifications.sql`.
+- No new migration is required. The existing migration must run through the deployment workflow before the user API is deployed.
+
+### Permissions and scope
+
+- Notification reads remain protected by backend permission `profile.read_own`.
+- Recipients can only query and mark their own notifications as read.
+- Self-notifications remain excluded by backend and database enforcement.
+
+### Frontend
+
+No frontend source changes. The existing feed, unread badge, polling, focus refresh, and read-state behavior remain compatible.
+
+### Verification
+
+- `[passed] python -m pytest` - 67 tests passed.
+- `[passed] python -m mypy src tests` - no issues in 107 source files.
+- `[passed] python -m compileall -q src tests`
+- `[passed] git diff --check`
+- `[pending] production workflow and health verification` - runs after pushing and merging the fix.
+
+### Deployment
+
+- Merge and push `inkfig-user-system` so its workflow runs the existing notification migration, deploys the user API, and verifies production health.
+- The main backend and frontend require no redeployment for this repair.
+
+### Git
+
+- Branch: `fix/notification-delivery`
+- Commit: included in the notification deployment repair commit.
+- Push: pending final synchronization.
+
+### Notes
+
+The original assertion required the exact text `@router.get("")`, although the valid implementation uses `@router.get("", response_model=NotificationFeed)`.
