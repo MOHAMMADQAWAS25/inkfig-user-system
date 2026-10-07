@@ -9,6 +9,7 @@ from src.interface.api.routes.password_reset import router as password_reset_rou
 from src.interface.api.routes.registration import router as registration_router
 from src.interface.api.routes.settings import router as settings_router
 from src.interface.api.routes.social_profiles import router as social_profiles_router
+from src.interface.api.routes.notifications import router as notifications_router
 
 
 def create_app() -> FastAPI:
@@ -29,6 +30,7 @@ def create_app() -> FastAPI:
     app.include_router(administration_router, prefix=settings.api_prefix)
     app.include_router(settings_router, prefix=settings.api_prefix)
     app.include_router(social_profiles_router, prefix=settings.api_prefix)
+    app.include_router(notifications_router, prefix=settings.api_prefix)
     return app
 
 

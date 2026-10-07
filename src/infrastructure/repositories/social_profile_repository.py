@@ -205,6 +205,17 @@ class SqlAlchemySocialProfileRepository:
                     "followed_user_id": followed_user_id,
                 },
             )
+            await self._session.execute(
+                text(
+                    """
+                    insert into notifications(recipient_user_id, actor_user_id, event_type)
+                    values (:followed_user_id, :follower_user_id, 'follow')
+                    on conflict on constraint notifications_event_unique do update
+                    set created_at = now(), read_at = null
+                    """
+                ),
+                {"follower_user_id": follower_user_id, "followed_user_id": followed_user_id},
+            )
         else:
             await self._session.execute(
                 text(

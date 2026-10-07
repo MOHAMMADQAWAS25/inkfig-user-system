@@ -2678,3 +2678,33 @@ No API changes in this repository. JWT permission claims now include `works.dele
 ### Notes
 
 Existing browser sessions should sign out and sign in again so both the JWT and frontend session contain the new permission.
+
+## 2026-10-08 - Add persistent social notifications
+
+### Request
+
+Notify users across devices when another user follows them or likes or saves one of their works.
+
+### Changes
+
+- Added the shared notifications table with unread state, event deduplication, indexes, and cascading account/work cleanup.
+- Added authenticated list and mark-all-read endpoints.
+- Creates or refreshes a follow notification inside the authoritative follow transaction.
+- Returns actor identity and avatar data without exposing private account fields.
+
+### API and database
+
+- Added `GET /api/v1/notifications` and `PUT /api/v1/notifications/read`.
+- Migration: `20261008_015_create_notifications.sql`.
+- Requires `profile.read_own`; every query is scoped to the authenticated recipient.
+
+### Verification
+
+- `[passed] git diff --check`
+- `[added] notification schema/API regression test`
+- `[not run] pytest/mypy` - Python is unavailable locally; GitHub Actions will run both.
+
+### Deployment and Git
+
+- Deploy this migration and user service before `inkfig-main-system` and `inkfig-user-FE`.
+- Branch: `feature/full-notifications`; commit/push pending final synchronization.
