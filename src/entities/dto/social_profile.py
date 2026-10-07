@@ -28,6 +28,7 @@ class ProfileAccountListResponse(BaseModel):
 class ProfileSearchResult(BaseModel):
     user_id: UUID
     full_name: str
+    avatar_url: str | None = None
 
 
 class ProfileSearchResponse(BaseModel):

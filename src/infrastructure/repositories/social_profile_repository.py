@@ -22,7 +22,7 @@ class SqlAlchemySocialProfileRepository:
             await self._session.execute(
                 text(
                     """
-                    select p.user_id, p.full_name
+                    select p.user_id, p.full_name, p.avatar_object_path
                     from user_profiles p
                     join user_accounts a on a.user_id = p.user_id
                     where p.is_active = true
@@ -39,7 +39,13 @@ class SqlAlchemySocialProfileRepository:
             )
         ).mappings()
         return [
-            ProfileSearchResult(user_id=row.user_id, full_name=row.full_name)
+            ProfileSearchResult(
+                user_id=row.user_id,
+                full_name=row.full_name,
+                avatar_url=self._storage.public_url(row.avatar_object_path)
+                if row.avatar_object_path
+                else None,
+            )
             for row in rows
         ]
 

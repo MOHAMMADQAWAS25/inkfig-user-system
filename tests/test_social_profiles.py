@@ -41,7 +41,11 @@ class SocialProfileRepositoryStub:
         self, query: str, limit: int
     ) -> list[ProfileSearchResult]:
         self.search_query = query
-        return [ProfileSearchResult(user_id=self.profile_id, full_name="InkFig Artist")][
+        return [ProfileSearchResult(
+            user_id=self.profile_id,
+            full_name="InkFig Artist",
+            avatar_url="https://cdn.example/avatar.webp",
+        )][
             :limit
         ]
 
@@ -108,3 +112,4 @@ async def test_profile_search_normalizes_the_live_query() -> None:
 
     assert repository.search_query == "Mohammad Qawasmi"
     assert results[0].user_id == repository.profile_id
+    assert results[0].avatar_url == "https://cdn.example/avatar.webp"

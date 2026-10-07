@@ -66,6 +66,8 @@ jobs:
       - name: Prepare deployment parameters
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           ACM_CERTIFICATE_ARN: ${{ secrets.ACM_CERTIFICATE_ARN }}
           BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
@@ -82,6 +84,8 @@ jobs:
               "Environment": "production",
               "CorsOrigins": json.dumps(["https://inkfig-hu.com"]),
               "DatabaseUrl": os.environ["DATABASE_URL"],
+              "SupabaseUrl": os.environ["SUPABASE_URL"],
+              "SupabaseSecretKey": os.environ["SUPABASE_SECRET_KEY"],
               "JwtSecret": os.environ["JWT_SECRET"],
               "CertificateArn": os.environ["ACM_CERTIFICATE_ARN"],
               "BrevoApiKey": os.environ["BREVO_API_KEY"],
