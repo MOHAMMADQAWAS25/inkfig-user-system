@@ -22,3 +22,12 @@ class ProfileAccountSummary(BaseModel):
 class ProfileAccountListResponse(BaseModel):
     items: list[ProfileAccountSummary]
 
+
+class ProfileSearchResult(BaseModel):
+    user_id: UUID
+    full_name: str
+
+
+class ProfileSearchResponse(BaseModel):
+    items: list[ProfileSearchResult]
+

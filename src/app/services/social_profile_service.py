@@ -2,6 +2,7 @@ from uuid import UUID
 
 from src.entities.dto.social_profile import (
     ProfileAccountSummary,
+    ProfileSearchResult,
     PublicProfileResponse,
 )
 from src.entities.exceptions.social_profile import (
@@ -14,6 +15,10 @@ from src.entities.repositories.social_profile import SocialProfileRepository
 class SocialProfileService:
     def __init__(self, repository: SocialProfileRepository) -> None:
         self._repository = repository
+
+    async def search_profiles(self, query: str, limit: int) -> list[ProfileSearchResult]:
+        normalized = " ".join(query.split())
+        return await self._repository.search_profiles(normalized, limit)
 
     async def get_profile(
         self, profile_user_id: UUID, viewer_user_id: UUID

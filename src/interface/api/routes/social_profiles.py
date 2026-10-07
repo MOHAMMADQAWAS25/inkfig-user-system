@@ -1,11 +1,12 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from src.app.services.social_profile_service import SocialProfileService
 from src.entities.dto.social_profile import (
     ProfileAccountListResponse,
+    ProfileSearchResponse,
     PublicProfileResponse,
 )
 from src.entities.exceptions.social_profile import (
@@ -16,6 +17,15 @@ from src.interface.dependencies.authorization import Principal, require_permissi
 from src.interface.dependencies.social_profile import get_social_profile_service
 
 router = APIRouter(prefix="/profiles", tags=["social profiles"])
+
+
+@router.get("/search", response_model=ProfileSearchResponse)
+async def search_profiles(
+    service: Annotated[SocialProfileService, Depends(get_social_profile_service)],
+    query: str = Query(min_length=1, max_length=120),
+    limit: int = Query(8, ge=1, le=20),
+) -> ProfileSearchResponse:
+    return ProfileSearchResponse(items=await service.search_profiles(query, limit))
 
 
 @router.get("/{user_id}", response_model=PublicProfileResponse)

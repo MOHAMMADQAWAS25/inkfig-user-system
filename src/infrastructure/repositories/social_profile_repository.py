@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.entities.dto.social_profile import (
     ProfileAccountSummary,
+    ProfileSearchResult,
     PublicProfileResponse,
 )
 
@@ -12,6 +13,34 @@ from src.entities.dto.social_profile import (
 class SqlAlchemySocialProfileRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def search_profiles(
+        self, query: str, limit: int
+    ) -> list[ProfileSearchResult]:
+        rows = (
+            await self._session.execute(
+                text(
+                    """
+                    select p.user_id, p.full_name
+                    from user_profiles p
+                    join user_accounts a on a.user_id = p.user_id
+                    where p.is_active = true
+                      and a.account_status = 'active'
+                      and a.email_verified_at is not null
+                      and lower(p.full_name) like '%' || lower(:query) || '%'
+                    order by
+                      case when lower(p.full_name) like lower(:query) || '%' then 0 else 1 end,
+                      lower(p.full_name), p.user_id
+                    limit :limit
+                    """
+                ),
+                {"query": query, "limit": limit},
+            )
+        ).mappings()
+        return [
+            ProfileSearchResult(user_id=row.user_id, full_name=row.full_name)
+            for row in rows
+        ]
 
     async def get_profile(
         self, profile_user_id: UUID, viewer_user_id: UUID

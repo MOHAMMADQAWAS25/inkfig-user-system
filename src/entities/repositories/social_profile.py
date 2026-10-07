@@ -3,11 +3,16 @@ from uuid import UUID
 
 from src.entities.dto.social_profile import (
     ProfileAccountSummary,
+    ProfileSearchResult,
     PublicProfileResponse,
 )
 
 
 class SocialProfileRepository(Protocol):
+    async def search_profiles(
+        self, query: str, limit: int
+    ) -> list[ProfileSearchResult]: ...
+
     async def get_profile(
         self, profile_user_id: UUID, viewer_user_id: UUID
     ) -> PublicProfileResponse | None: ...
