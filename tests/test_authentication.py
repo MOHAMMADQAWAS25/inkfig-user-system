@@ -1,19 +1,26 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from uuid import UUID, uuid4
 
 import jwt
 import pytest
+from pydantic import ValidationError
 
 from src.app.services.authentication_service import AuthenticationService
-from src.entities.dto.authentication import AuthenticatedUser
+from src.entities.dto.authentication import (
+    AuthenticatedUser,
+    LoginRequest,
+    PasswordResetRequest,
+)
+from src.entities.dto.registration import RegisterUserRequest
+from src.entities.enums.account_status import AccountStatus
+from src.entities.enums.gender import Gender
 from src.entities.exceptions.authentication import (
+    AccountAdminSuspendedError,
     AccountInactiveError,
     InvalidCredentialsError,
     InvalidRefreshTokenError,
 )
 from src.infrastructure.security.passwords import Pbkdf2PasswordHasher
-from src.entities.enums.account_status import AccountStatus
-from src.entities.exceptions.authentication import AccountAdminSuspendedError
 
 
 class FakeAuthenticationRepository:
@@ -31,7 +38,9 @@ class FakeAuthenticationRepository:
 
     async def reactivate_self_deactivated(self, user_id: UUID) -> AuthenticatedUser:
         assert self.user is not None and self.user.user_id == user_id
-        self.user = self.user.model_copy(update={"is_active": True, "account_status": AccountStatus.ACTIVE})
+        self.user = self.user.model_copy(
+            update={"is_active": True, "account_status": AccountStatus.ACTIVE}
+        )
         return self.user
 
     async def consume_refresh_token(
@@ -76,6 +85,26 @@ def test_password_hash_is_salted_and_verifiable() -> None:
     assert not hasher.verify("wrong-password", first)
 
 
+def test_system_administrator_email_is_accepted_only_for_authentication() -> None:
+    email = "mohammadqawas25@gmail.com"
+
+    assert (
+        LoginRequest(email=f" {email.upper()} ", password="correct-password").email
+        == email
+    )
+    assert PasswordResetRequest(email=email).email == email
+    with pytest.raises(ValidationError):
+        RegisterUserRequest(
+            email=email,
+            full_name="InkFig Admin",
+            phone_number="0598500140",
+            gender=Gender.MALE,
+            date_of_birth=date(2004, 10, 5),
+            password="correct-password",
+            password_confirmation="correct-password",
+        )
+
+
 @pytest.mark.asyncio
 async def test_login_issues_inkfig_access_and_refresh_tokens() -> None:
     user = make_user()
@@ -97,21 +126,38 @@ async def test_login_issues_inkfig_access_and_refresh_tokens() -> None:
 async def test_login_rejects_wrong_password_and_inactive_account() -> None:
     user = make_user()
     with pytest.raises(InvalidCredentialsError):
-        await make_service(FakeAuthenticationRepository(user)).login(user.email, "wrong-password")
+        await make_service(FakeAuthenticationRepository(user)).login(
+            user.email, "wrong-password"
+        )
     inactive = make_user(active=False)
     with pytest.raises(AccountInactiveError):
         await make_service(FakeAuthenticationRepository(inactive)).login(
             inactive.email, "correct-password"
         )
 
+
 @pytest.mark.asyncio
 async def test_login_reactivates_only_self_deactivated_accounts() -> None:
-    self_deactivated = make_user(active=False).model_copy(update={"email_verified_at": datetime.now(timezone.utc), "account_status": AccountStatus.SELF_DEACTIVATED})
-    result = await make_service(FakeAuthenticationRepository(self_deactivated)).login(self_deactivated.email, "correct-password")
+    self_deactivated = make_user(active=False).model_copy(
+        update={
+            "email_verified_at": datetime.now(timezone.utc),
+            "account_status": AccountStatus.SELF_DEACTIVATED,
+        }
+    )
+    result = await make_service(FakeAuthenticationRepository(self_deactivated)).login(
+        self_deactivated.email, "correct-password"
+    )
     assert result.user_id == self_deactivated.user_id
-    admin_suspended = make_user(active=False).model_copy(update={"email_verified_at": datetime.now(timezone.utc), "account_status": AccountStatus.ADMIN_SUSPENDED})
+    admin_suspended = make_user(active=False).model_copy(
+        update={
+            "email_verified_at": datetime.now(timezone.utc),
+            "account_status": AccountStatus.ADMIN_SUSPENDED,
+        }
+    )
     with pytest.raises(AccountAdminSuspendedError):
-        await make_service(FakeAuthenticationRepository(admin_suspended)).login(admin_suspended.email, "correct-password")
+        await make_service(FakeAuthenticationRepository(admin_suspended)).login(
+            admin_suspended.email, "correct-password"
+        )
 
 
 @pytest.mark.asyncio

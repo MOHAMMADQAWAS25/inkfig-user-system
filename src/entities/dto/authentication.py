@@ -6,6 +6,15 @@ from pydantic import BaseModel, Field, ValidationInfo, field_validator
 from src.entities.dto.registration import RegisterUserRequest
 from src.entities.enums.account_status import AccountStatus
 
+SYSTEM_ADMIN_EMAIL = "mohammadqawas25@gmail.com"
+
+
+def normalize_authentication_email(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized == SYSTEM_ADMIN_EMAIL:
+        return normalized
+    return RegisterUserRequest.validate_hebron_email(normalized)
+
 
 class LoginRequest(BaseModel):
     email: str = Field(min_length=1, max_length=254)
@@ -14,7 +23,7 @@ class LoginRequest(BaseModel):
     @field_validator("email")
     @classmethod
     def normalize_email(cls, value: str) -> str:
-        return RegisterUserRequest.validate_hebron_email(value)
+        return normalize_authentication_email(value)
 
 
 class AuthenticatedUser(BaseModel):
@@ -65,7 +74,7 @@ class PasswordResetRequest(BaseModel):
     @field_validator("email")
     @classmethod
     def normalize_email(cls, value: str) -> str:
-        return RegisterUserRequest.validate_hebron_email(value)
+        return normalize_authentication_email(value)
 
 
 class PasswordResetRequestResponse(BaseModel):
