@@ -2340,3 +2340,75 @@ Persist profile pictures through the backend using production-safe upload practi
 
 - Branch: `feature/profile-avatar-upload`
 - Commit, rebase, push, merge, and main push: pending final synchronization.
+## 2026-10-07 - Paginate live account discovery
+
+### Request
+
+Support a navigation-side account search panel that searches names live from the first character and paginates every backend result set.
+
+### Changes
+
+- Added continuation pagination to the existing privacy-safe account-name search.
+- Uses a limit-plus-one query to determine whether another page exists.
+- Preserved normalized partial-name matching, prefix-first ordering, avatar URLs, active-account scope, and verified-account scope.
+- Updated the hosted-database settings regression test to recognize the newly merged backend-only Supabase avatar configuration while retaining empty safe defaults.
+- Left authentication, profile details, follow workflows, and artwork APIs unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: paginated account-search contract, query, service workflow, and tests.
+- `inkfig-user-FE`: navigation icon, side panel, live search, and Load more flow.
+
+### Files
+
+- `src/entities/dto/social_profile.py`: adds nullable `next_cursor` to account-search responses.
+- `src/entities/repositories/social_profile.py`: adds repository offset scope.
+- `src/app/services/social_profile_service.py`: implements limit-plus-one pagination and normalizes queries.
+- `src/infrastructure/repositories/social_profile_repository.py`: applies bounded offset pagination.
+- `src/interface/api/routes/social_profiles.py`: accepts the validated cursor and returns continuation metadata.
+- `tests/test_social_profiles.py`: verifies normalized queries, page size, offset, and continuation cursors.
+- `tests/test_health.py`: aligns hosted-settings assertions with the merged avatar-storage configuration.
+
+### API
+
+- `GET /api/v1/profiles/search`: accepts `query` from 1 to 120 characters, `limit` from 1 to 20, and integer `cursor` from 0 to 10,000; returns minimal active verified account records plus nullable `next_cursor`. Invalid query, limit, cursor, or UUID-independent input receives FastAPI validation errors.
+
+### Database
+
+- Migration: `No migration required`
+- Pagination uses the existing `user_profiles_full_name_trgm_idx`, deterministic name/user ordering, and runtime offset. No schema, constraint, index, foreign-key, backfill, or rollback change is required.
+
+### Permissions and scope
+
+- No authenticated permission is required for minimal public account discovery.
+- Viewer, user, supervisor, admin, and system-administrator clients can search active, email-verified profiles only.
+- The backend excludes inactive, self-deactivated, suspended, unverified, and missing accounts and exposes only user ID, full name, and nullable avatar URL.
+
+### Frontend
+
+- The coordinated navigation panel performs debounced live name search without requiring `@`.
+- Every page is limited by the backend and appended through a Load more control using `next_cursor`.
+
+### Verification
+
+- `[passed] uv run --with-requirements requirements.txt pytest -q - 57 passed`
+- `[passed] uv run --with-requirements requirements.txt mypy src tests - no issues in 103 source files`
+- `[passed] focused ruff check for all changed backend files`
+- `[passed] focused pagination tests - 5 passed`
+- `[passed] git diff --check`
+
+### Deployment
+
+- Deploy `inkfig-user-system` before `inkfig-user-FE`.
+- No migrations must run before deployment.
+- No environment-variable or configuration changes are required.
+
+### Git
+
+- Branch: `main`
+- Commit: `3ad0919`
+- Push: `successful`
+
+### Notes
+
+The cursor is bounded to 10,000 results to prevent unbounded offsets. Existing local `samconfig.toml` and untracked `aws` items were intentionally left unchanged.
