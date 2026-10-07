@@ -2547,3 +2547,69 @@ No frontend changes.
 ### Notes
 
 The plaintext password is intentionally omitted. Existing local `samconfig.toml` and untracked `aws` items remain untouched.
+
+## 2026-10-07 - Enable external system-administrator login
+
+### Request
+
+Resolve the invalid-email-or-password failure when the bootstrapped system administrator signs in with the authorized Gmail address.
+
+### Changes
+
+- Separated authentication email validation from public registration validation.
+- Allowed the explicitly authorized system-administrator Gmail address for login and password-reset requests.
+- Kept signup, verification, and resend registration flows restricted to Hebron University email formats.
+- Preserved password verification, account status, token issuance, session cookies, roles, and permissions.
+
+### Repositories
+
+- `inkfig-user-system`: authentication contract fix, regression test, deployment, and this log.
+
+### Files
+
+- `src/entities/dto/authentication.py`: accepts the authorized administrator email only in authentication and password-reset contracts.
+- `tests/test_authentication.py`: verifies administrator authentication acceptance and continued public-signup rejection.
+- `AGENT_FEATURE_LOG.md`: records the completed fix and production verification.
+
+### API
+
+- `POST /api/v1/auth/login`: now accepts the authorized system-administrator Gmail address and otherwise retains the existing request, cookie, response, and error behavior.
+- `POST /api/v1/auth/password-reset/request`: accepts the same authorized administrator email for account recovery.
+- Password-reset verify and confirm contracts inherit the same authentication-email allowance.
+
+### Database
+
+No migration required.
+
+### Permissions and scope
+
+- The exception is limited to the explicitly authorized system-administrator email.
+- It does not permit Gmail or other external addresses to register publicly.
+- The backend still validates credentials, active/verified state, role, permissions, and token version before issuing a session.
+
+### Frontend
+
+No frontend changes.
+
+### Verification
+
+- `[passed] uv run --with-requirements requirements.txt pytest -q - 65 tests passed`
+- `[passed] uv run --with ruff ruff check src/entities/dto/authentication.py tests/test_authentication.py`
+- `[passed] uv run --with-requirements requirements.txt mypy src/entities/dto/authentication.py tests/test_authentication.py`
+- `[passed] git diff --check`
+- `[passed] production POST /api/v1/auth/login - HTTP 200 with role system_administrator`
+
+### Deployment
+
+- `inkfig-user-system` was deployed through the existing GitHub Actions AWS workflow.
+- No migration or environment-variable change is required.
+
+### Git
+
+- Branch: `main`
+- Commit: `be30f64`
+- Push: `successful`
+
+### Notes
+
+The initial production request returned the old 422 validation response until the deployment completed; the live endpoint then returned HTTP 200. The plaintext password is intentionally omitted.
