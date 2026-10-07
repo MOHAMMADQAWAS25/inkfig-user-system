@@ -20,6 +20,15 @@ class SocialProfileRepositoryStub:
         self.follow_calls: list[tuple[object, object, bool]] = []
         self.available = True
         self.search_query: str | None = None
+        self.search_limit: int | None = None
+        self.search_offset: int | None = None
+        self.search_results = [
+            ProfileSearchResult(
+                user_id=self.profile_id,
+                full_name="InkFig Artist",
+                avatar_url="https://cdn.example/avatar.webp",
+            )
+        ]
 
     async def get_profile(
         self, profile_user_id: UUID, viewer_user_id: UUID
@@ -38,16 +47,12 @@ class SocialProfileRepositoryStub:
         )
 
     async def search_profiles(
-        self, query: str, limit: int
+        self, query: str, limit: int, offset: int
     ) -> list[ProfileSearchResult]:
         self.search_query = query
-        return [ProfileSearchResult(
-            user_id=self.profile_id,
-            full_name="InkFig Artist",
-            avatar_url="https://cdn.example/avatar.webp",
-        )][
-            :limit
-        ]
+        self.search_limit = limit
+        self.search_offset = offset
+        return self.search_results[offset : offset + limit]
 
     async def list_followers(
         self, profile_user_id: UUID, viewer_user_id: UUID
@@ -108,8 +113,29 @@ async def test_profile_search_normalizes_the_live_query() -> None:
     repository = SocialProfileRepositoryStub()
     service = SocialProfileService(repository)
 
-    results = await service.search_profiles("  Mohammad   Qawasmi ", 8)
+    results, next_cursor = await service.search_profiles(
+        "  Mohammad   Qawasmi ", 8, 0
+    )
 
     assert repository.search_query == "Mohammad Qawasmi"
     assert results[0].user_id == repository.profile_id
+    assert repository.search_limit == 9
+    assert repository.search_offset == 0
+    assert next_cursor is None
     assert results[0].avatar_url == "https://cdn.example/avatar.webp"
+
+
+@pytest.mark.asyncio
+async def test_profile_search_returns_a_continuation_cursor() -> None:
+    repository = SocialProfileRepositoryStub()
+    repository.search_results = [
+        ProfileSearchResult(user_id=uuid4(), full_name=f"Artist {index}")
+        for index in range(3)
+    ]
+    service = SocialProfileService(repository)
+
+    results, next_cursor = await service.search_profiles("Artist", 2, 0)
+
+    assert len(results) == 2
+    assert next_cursor == 2
+    assert repository.search_limit == 3

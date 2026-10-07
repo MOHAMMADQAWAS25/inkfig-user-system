@@ -26,7 +26,8 @@ def test_root_health_check() -> None:
 def test_settings_use_hosted_database_without_local_fallback() -> None:
     assert Settings.model_fields["database_url"].default == ""
     assert Settings.model_fields["jwt_secret"].default == ""
-    assert "supabase_url" not in Settings.model_fields
+    assert Settings.model_fields["supabase_url"].default == ""
+    assert Settings.model_fields["supabase_secret_key"].default == ""
     assert "postgres_host" not in Settings.model_fields
 
 

@@ -1,5 +1,11 @@
 from uuid import UUID
 
+from src.app.services.profile_avatar_service import ProfileAvatarService
+from src.entities.dto.profile_avatar import (
+    AvatarResponse,
+    AvatarUploadRequest,
+    AvatarUploadResponse,
+)
 from src.entities.dto.social_profile import (
     ProfileAccountSummary,
     ProfileSearchResult,
@@ -10,8 +16,6 @@ from src.entities.exceptions.social_profile import (
     ProfileNotFoundError,
 )
 from src.entities.repositories.social_profile import SocialProfileRepository
-from src.app.services.profile_avatar_service import ProfileAvatarService
-from src.entities.dto.profile_avatar import AvatarResponse, AvatarUploadRequest, AvatarUploadResponse
 
 
 class SocialProfileService:
@@ -29,9 +33,13 @@ class SocialProfileService:
             raise RuntimeError("Avatar uploads are not configured.")
         return await self._avatar_service.complete_upload(user_id, object_path)
 
-    async def search_profiles(self, query: str, limit: int) -> list[ProfileSearchResult]:
+    async def search_profiles(
+        self, query: str, limit: int, cursor: int
+    ) -> tuple[list[ProfileSearchResult], int | None]:
         normalized = " ".join(query.split())
-        return await self._repository.search_profiles(normalized, limit)
+        items = await self._repository.search_profiles(normalized, limit + 1, cursor)
+        next_cursor = cursor + limit if len(items) > limit else None
+        return items[:limit], next_cursor
 
     async def get_profile(
         self, profile_user_id: UUID, viewer_user_id: UUID

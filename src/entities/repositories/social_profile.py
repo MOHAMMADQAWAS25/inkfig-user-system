@@ -10,7 +10,7 @@ from src.entities.dto.social_profile import (
 
 class SocialProfileRepository(Protocol):
     async def search_profiles(
-        self, query: str, limit: int
+        self, query: str, limit: int, offset: int
     ) -> list[ProfileSearchResult]: ...
 
     async def get_profile(

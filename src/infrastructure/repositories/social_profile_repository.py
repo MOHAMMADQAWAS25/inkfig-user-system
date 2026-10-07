@@ -16,7 +16,7 @@ class SqlAlchemySocialProfileRepository:
         self._session, self._storage = session, storage
 
     async def search_profiles(
-        self, query: str, limit: int
+        self, query: str, limit: int, offset: int
     ) -> list[ProfileSearchResult]:
         rows = (
             await self._session.execute(
@@ -32,10 +32,10 @@ class SqlAlchemySocialProfileRepository:
                     order by
                       case when lower(p.full_name) like lower(:query) || '%' then 0 else 1 end,
                       lower(p.full_name), p.user_id
-                    limit :limit
+                    limit :limit offset :offset
                     """
                 ),
-                {"query": query, "limit": limit},
+                {"query": query, "limit": limit, "offset": offset},
             )
         ).mappings()
         return [

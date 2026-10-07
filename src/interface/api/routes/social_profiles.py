@@ -4,13 +4,22 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from src.app.services.social_profile_service import SocialProfileService
+from src.entities.dto.profile_avatar import (
+    AvatarResponse,
+    AvatarUploadRequest,
+    AvatarUploadResponse,
+    CompleteAvatarUploadRequest,
+)
 from src.entities.dto.social_profile import (
     ProfileAccountListResponse,
     ProfileSearchResponse,
     PublicProfileResponse,
 )
-from src.entities.dto.profile_avatar import AvatarResponse, AvatarUploadRequest, AvatarUploadResponse, CompleteAvatarUploadRequest
-from src.entities.exceptions.profile_avatar import AvatarStorageError, AvatarUploadNotFoundError, UnsupportedAvatarError
+from src.entities.exceptions.profile_avatar import (
+    AvatarStorageError,
+    AvatarUploadNotFoundError,
+    UnsupportedAvatarError,
+)
 from src.entities.exceptions.social_profile import (
     CannotFollowSelfError,
     ProfileNotFoundError,
@@ -26,8 +35,10 @@ async def search_profiles(
     service: Annotated[SocialProfileService, Depends(get_social_profile_service)],
     query: str = Query(min_length=1, max_length=120),
     limit: int = Query(8, ge=1, le=20),
+    cursor: int = Query(0, ge=0, le=10_000),
 ) -> ProfileSearchResponse:
-    return ProfileSearchResponse(items=await service.search_profiles(query, limit))
+    items, next_cursor = await service.search_profiles(query, limit, cursor)
+    return ProfileSearchResponse(items=items, next_cursor=next_cursor)
 @router.post("/avatar-uploads", response_model=AvatarUploadResponse, status_code=201)
 async def prepare_avatar_upload(
     request: AvatarUploadRequest,

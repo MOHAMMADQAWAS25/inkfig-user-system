@@ -33,4 +33,5 @@ class ProfileSearchResult(BaseModel):
 
 class ProfileSearchResponse(BaseModel):
     items: list[ProfileSearchResult]
+    next_cursor: int | None = None
 
