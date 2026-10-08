@@ -2777,3 +2777,69 @@ No frontend source changes. The existing feed, unread badge, polling, focus refr
 ### Notes
 
 The original assertion required the exact text `@router.get("")`, although the valid implementation uses `@router.get("", response_model=NotificationFeed)`.
+
+## 2026-10-08 - Add authenticated live notification WebSocket
+
+### Request
+
+Deliver InkFig notifications live without requiring a page refresh.
+
+### Changes
+
+- Added an AWS API Gateway WebSocket API, connection Lambda, short-lived authenticated tickets, connection persistence, and follow-event delivery.
+- Kept REST as the authoritative notification feed and made realtime delivery an invalidation signal only.
+
+### Repositories
+
+- `inkfig-user-system`: owns WebSocket authentication, connections, and follow delivery.
+- `inkfig-main-system`: publishes like/save invalidations.
+- `inkfig-user-FE`: connects, refreshes, and reconnects automatically.
+
+### Files
+
+- `template.yaml`: WebSocket API, routes, stage, Lambda, IAM, environment, and outputs.
+- `migrations/20261008_016_create_websocket_connections.sql`: active connection table.
+- `src/websocket_handler.py`: connect/disconnect authentication and persistence.
+- `src/interface/api/routes/notifications.py`: short-lived ticket endpoint.
+- `src/infrastructure/integrations/notification_realtime.py`: API Gateway publisher.
+
+### API
+
+- `POST /api/v1/notifications/socket-ticket`: returns a 60-second signed ticket and WebSocket URL; requires `profile.read_own`.
+- `WSS /production`: accepts authenticated ticket connections and emits `notifications.changed`.
+
+### Database
+
+- Migration: `20261008_016_create_websocket_connections.sql`
+- Creates indexed, RLS-protected connection records with user cascade deletion. Migration was applied.
+
+### Permissions and scope
+
+- Requires `profile.read_own`; tickets are user-bound, short-lived, and backend signed.
+- Publishers have only `execute-api:ManageConnections`; backend authorization remains authoritative.
+
+### Frontend
+
+- Live clients reload the protected REST feed after an invalidation.
+
+### Verification
+
+- `[passed] pytest -q` — 68 tests passed.
+- `[passed] mypy src tests`
+- `[passed] sam validate --lint`
+- `[passed] migration runner`
+- `[incomplete] local sam build — dependency copy remained running; GitHub deployment performs a clean build`
+
+### Deployment
+
+- Deploy user system first, then main system, then frontend. No new secrets are required.
+
+### Git
+
+- Branch: `main`
+- Commit: `651f816`
+- Push: `successful`
+
+### Notes
+
+The practical clean-architecture guidance kept AWS delivery in infrastructure and authentication at the interface boundary.
