@@ -2843,3 +2843,69 @@ Deliver InkFig notifications live without requiring a page refresh.
 ### Notes
 
 The practical clean-architecture guidance kept AWS delivery in infrastructure and authentication at the interface boundary.
+
+## 2026-10-09 - Add artwork context to like notifications
+
+### Request
+
+Show the liked artwork title in like notifications, open the exact artwork when the notification content is clicked, and open the actor profile when their avatar is clicked.
+
+### Changes
+
+- Added the related artwork title to notification feed items.
+- Joined notification records to their referenced artwork without changing notification creation or WebSocket invalidation behavior.
+- Kept historical follow and save notification responses compatible.
+- Intentionally left notification deduplication and read-state behavior unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: enriches notification feed responses with artwork titles.
+- `inkfig-main-system`: provides the public exact-artwork endpoint consumed by notification links.
+- `inkfig-user-FE`: renders artwork titles and separate artwork/profile navigation targets.
+
+### Files
+
+- `src/interface/api/routes/notifications.py`: selects and returns the nullable related artwork title.
+- `tests/test_notifications.py`: verifies notification artwork context is present.
+
+### API
+
+- `GET /api/v1/notifications`: response items now include nullable `work_title`; existing filters, authentication, permissions, and error behavior are unchanged.
+
+### Database
+
+No migration required. The query uses the existing `notifications.work_id` foreign key and `works.title`.
+
+### Permissions and scope
+
+- Requires the existing authenticated notification-read scope.
+- Users receive only notifications where they are the recipient.
+- Authorization continues to be validated by the backend.
+
+### Frontend
+
+- The frontend uses `work_title` for like-notification artwork context.
+- Navigation behavior is implemented in `inkfig-user-FE`.
+
+### Verification
+
+- `[passed] uv run --with-requirements requirements.txt ruff check src/interface/api/routes/notifications.py tests/test_notifications.py`
+- `[passed] uv run --with-requirements requirements.txt pytest -q` — 68 passed
+- `[passed] uv run --with-requirements requirements.txt mypy src` — 110 source files
+- `[passed] git diff --check`
+
+### Deployment
+
+- Deploy `inkfig-user-system`.
+- No migrations are required before deployment.
+- No environment-variable or configuration changes.
+
+### Git
+
+- Branch: `main`
+- Commit: `c18252d`
+- Push: `successful`
+
+### Notes
+
+The practical clean-architecture guidance kept response enrichment at the authenticated interface/query boundary.
