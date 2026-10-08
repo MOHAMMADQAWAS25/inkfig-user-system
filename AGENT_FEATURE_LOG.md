@@ -2909,3 +2909,73 @@ No migration required. The query uses the existing `notifications.work_id` forei
 ### Notes
 
 The practical clean-architecture guidance kept response enrichment at the authenticated interface/query boundary.
+
+## 2026-10-09 - Allow profile picture removal
+
+### Request
+
+Allow users to remove their current profile picture completely, in addition to replacing it.
+
+### Changes
+
+- Added an authenticated avatar-removal use case.
+- Clears the profile avatar reference before attempting storage cleanup.
+- Deletes the previous avatar object from Supabase Storage when one exists.
+- Keeps the profile successfully cleared if storage cleanup is temporarily unavailable, matching replacement behavior.
+- Intentionally left avatar upload, registration avatar selection, public-profile visibility, and other profile data unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: adds the avatar removal API, service workflow, repository operation, and tests.
+- `inkfig-user-FE`: adds owner-only Change and Remove controls.
+
+### Files
+
+- `src/entities/repositories/profile_avatar.py`: adds the clear-avatar repository contract.
+- `src/app/services/profile_avatar_service.py`: coordinates clearing the profile and deleting the old object.
+- `src/app/services/social_profile_service.py`: exposes avatar removal to the interface layer.
+- `src/infrastructure/repositories/profile_avatar_repository.py`: sets `avatar_object_path` to null.
+- `src/interface/api/routes/social_profiles.py`: exposes the authenticated removal endpoint.
+- `tests/test_profile_avatars.py`: verifies database clearing and storage deletion.
+
+### API
+
+- `DELETE /api/v1/profiles/avatar`: removes the authenticated user's profile picture and returns 204; requires an authenticated account with `profile.read_own`.
+
+### Database
+
+No migration required. The existing nullable `user_profiles.avatar_object_path` column is cleared to null.
+
+### Permissions and scope
+
+- Requires `profile.read_own`.
+- Users can remove only the avatar associated with their authenticated user ID.
+- User identity and scope are validated by the backend.
+
+### Frontend
+
+- The frontend provides an owner-only remove action with confirmation and fallback initials.
+
+### Verification
+
+- `[passed] uv run --with ruff ruff check src/entities/repositories/profile_avatar.py src/infrastructure/repositories/profile_avatar_repository.py src/app/services/profile_avatar_service.py src/app/services/social_profile_service.py src/interface/api/routes/social_profiles.py tests/test_profile_avatars.py`
+- `[passed] uv run --with-requirements requirements.txt --with pytest --with pytest-asyncio pytest -q tests/test_profile_avatars.py` — 3 passed
+- `[passed] uv run --with-requirements requirements.txt --with pytest --with pytest-asyncio pytest -q` — 69 passed
+- `[passed] uv run --with-requirements requirements.txt mypy src` — 95 source files
+- `[passed] git diff --check`
+
+### Deployment
+
+- Deploy `inkfig-user-system` before `inkfig-user-FE`.
+- No migrations are required before deployment.
+- No environment-variable or configuration changes.
+
+### Git
+
+- Branch: `main`
+- Commit: `167c714`
+- Push: `successful`
+
+### Notes
+
+The practical clean-architecture guidance kept the authenticated route, application workflow, persistence update, and Supabase cleanup in their respective layers.
