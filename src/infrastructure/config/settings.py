@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     password_reset_code_ttl_minutes: int = 10
     password_reset_max_attempts: int = 5
     password_reset_token_ttl_minutes: int = 10
+    websocket_public_url: str = ""
+    websocket_management_endpoint: str = ""
+    websocket_ticket_seconds: int = 60
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -83,8 +83,72 @@ Globals:
         PASSWORD_RESET_CODE_TTL_MINUTES: 10
         PASSWORD_RESET_MAX_ATTEMPTS: 5
         PASSWORD_RESET_TOKEN_TTL_MINUTES: 10
+        WEBSOCKET_PUBLIC_URL: !Sub "wss://${NotificationWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/production"
+        WEBSOCKET_MANAGEMENT_ENDPOINT: !Sub "https://${NotificationWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/production"
 
 Resources:
+  NotificationWebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "${AWS::StackName}-notifications-websocket"
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: "$request.body.action"
+
+  NotificationWebSocketIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref NotificationWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketFunction.Arn}/invocations"
+
+  NotificationWebSocketConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref NotificationWebSocketApi
+      RouteKey: $connect
+      AuthorizationType: NONE
+      Target: !Sub "integrations/${NotificationWebSocketIntegration}"
+
+  NotificationWebSocketDisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref NotificationWebSocketApi
+      RouteKey: $disconnect
+      Target: !Sub "integrations/${NotificationWebSocketIntegration}"
+
+  NotificationWebSocketDefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref NotificationWebSocketApi
+      RouteKey: $default
+      Target: !Sub "integrations/${NotificationWebSocketIntegration}"
+
+  NotificationWebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref NotificationWebSocketApi
+      StageName: production
+      AutoDeploy: true
+
+  WebSocketFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-websocket"
+      CodeUri: .
+      Handler: src.websocket_handler.handler
+      Tags:
+        Project: !Ref ProjectName
+        Service: user-system-websocket
+        Environment: !Ref Environment
+
+  WebSocketInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref WebSocketFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${NotificationWebSocketApi}/*"
+
   HttpApi:
     Type: AWS::Serverless::HttpApi
     Properties:
@@ -127,6 +191,11 @@ Resources:
         Project: !Ref ProjectName
         Service: user-system
         Environment: !Ref Environment
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: execute-api:ManageConnections
+              Resource: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${NotificationWebSocketApi}/production/POST/@connections/*"
       Events:
         Root:
           Type: HttpApi
@@ -154,3 +223,9 @@ Outputs:
   CloudflareCnameTarget:
     Description: Set the Cloudflare user-api CNAME target to this API Gateway hostname.
     Value: !GetAtt ApiDomainName.RegionalDomainName
+  NotificationWebSocketApiId:
+    Description: Shared WebSocket API ID used by notification publishers.
+    Value: !Ref NotificationWebSocketApi
+  NotificationWebSocketUrl:
+    Description: Public live-notification WebSocket URL.
+    Value: !Sub "wss://${NotificationWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/production"

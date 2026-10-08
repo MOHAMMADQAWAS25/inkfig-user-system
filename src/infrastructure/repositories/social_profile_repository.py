@@ -9,6 +9,9 @@ from src.entities.dto.social_profile import (
     PublicProfileResponse,
 )
 from src.entities.repositories.profile_avatar import ProfileAvatarStorage
+from src.infrastructure.integrations.notification_realtime import (
+    publish_notifications_changed,
+)
 
 
 class SqlAlchemySocialProfileRepository:
@@ -53,9 +56,10 @@ class SqlAlchemySocialProfileRepository:
         self, profile_user_id: UUID, viewer_user_id: UUID
     ) -> PublicProfileResponse | None:
         row = (
-            await self._session.execute(
-                text(
-                    """
+            (
+                await self._session.execute(
+                    text(
+                        """
                     select
                         p.user_id,
                         p.full_name,
@@ -80,19 +84,24 @@ class SqlAlchemySocialProfileRepository:
                       and a.account_status = 'active'
                       and a.email_verified_at is not null
                     """
-                ),
-                {
-                    "profile_user_id": profile_user_id,
-                    "viewer_user_id": viewer_user_id,
-                },
+                    ),
+                    {
+                        "profile_user_id": profile_user_id,
+                        "viewer_user_id": viewer_user_id,
+                    },
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         if row is None:
             return None
         return PublicProfileResponse(
             user_id=row.user_id,
             full_name=row.full_name,
-            avatar_url=self._storage.public_url(row.avatar_object_path) if row.avatar_object_path else None,
+            avatar_url=self._storage.public_url(row.avatar_object_path)
+            if row.avatar_object_path
+            else None,
             follower_count=row.follower_count,
             following_count=row.following_count,
             like_count=row.like_count,
@@ -167,7 +176,9 @@ class SqlAlchemySocialProfileRepository:
             ProfileAccountSummary(
                 user_id=row.user_id,
                 full_name=row.full_name,
-                avatar_url=self._storage.public_url(row.avatar_object_path) if row.avatar_object_path else None,
+                avatar_url=self._storage.public_url(row.avatar_object_path)
+                if row.avatar_object_path
+                else None,
                 is_following=row.is_following,
             )
             for row in rows
@@ -214,7 +225,10 @@ class SqlAlchemySocialProfileRepository:
                     set created_at = now(), read_at = null
                     """
                 ),
-                {"follower_user_id": follower_user_id, "followed_user_id": followed_user_id},
+                {
+                    "follower_user_id": follower_user_id,
+                    "followed_user_id": followed_user_id,
+                },
             )
         else:
             await self._session.execute(
@@ -231,5 +245,6 @@ class SqlAlchemySocialProfileRepository:
                 },
             )
         await self._session.commit()
+        if following:
+            await publish_notifications_changed(self._session, followed_user_id)
         return True
-
