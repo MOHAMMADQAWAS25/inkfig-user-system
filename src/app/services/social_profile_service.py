@@ -19,19 +19,32 @@ from src.entities.repositories.social_profile import SocialProfileRepository
 
 
 class SocialProfileService:
-    def __init__(self, repository: SocialProfileRepository, avatar_service: ProfileAvatarService | None = None) -> None:
+    def __init__(
+        self,
+        repository: SocialProfileRepository,
+        avatar_service: ProfileAvatarService | None = None,
+    ) -> None:
         self._repository = repository
         self._avatar_service = avatar_service
 
-    async def prepare_avatar_upload(self, user_id: UUID, data: AvatarUploadRequest) -> AvatarUploadResponse:
+    async def prepare_avatar_upload(
+        self, user_id: UUID, data: AvatarUploadRequest
+    ) -> AvatarUploadResponse:
         if self._avatar_service is None:
             raise RuntimeError("Avatar uploads are not configured.")
         return await self._avatar_service.prepare_upload(user_id, data)
 
-    async def complete_avatar_upload(self, user_id: UUID, object_path: str) -> AvatarResponse:
+    async def complete_avatar_upload(
+        self, user_id: UUID, object_path: str
+    ) -> AvatarResponse:
         if self._avatar_service is None:
             raise RuntimeError("Avatar uploads are not configured.")
         return await self._avatar_service.complete_upload(user_id, object_path)
+
+    async def remove_avatar(self, user_id: UUID) -> None:
+        if self._avatar_service is None:
+            raise RuntimeError("Avatar storage is not configured.")
+        await self._avatar_service.remove(user_id)
 
     async def search_profiles(
         self, query: str, limit: int, cursor: int
@@ -78,4 +91,3 @@ class SocialProfileService:
             follower_user_id, followed_user_id, following
         ):
             raise ProfileNotFoundError
-

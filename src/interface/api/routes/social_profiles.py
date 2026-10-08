@@ -39,6 +39,8 @@ async def search_profiles(
 ) -> ProfileSearchResponse:
     items, next_cursor = await service.search_profiles(query, limit, cursor)
     return ProfileSearchResponse(items=items, next_cursor=next_cursor)
+
+
 @router.post("/avatar-uploads", response_model=AvatarUploadResponse, status_code=201)
 async def prepare_avatar_upload(
     request: AvatarUploadRequest,
@@ -48,9 +50,13 @@ async def prepare_avatar_upload(
     try:
         return await service.prepare_avatar_upload(principal.user_id, request)
     except UnsupportedAvatarError as error:
-        raise HTTPException(422, "Choose a JPEG, PNG, or WebP image up to 2 MB.") from error
+        raise HTTPException(
+            422, "Choose a JPEG, PNG, or WebP image up to 2 MB."
+        ) from error
     except AvatarStorageError as error:
-        raise HTTPException(503, "Avatar storage is temporarily unavailable.") from error
+        raise HTTPException(
+            503, "Avatar storage is temporarily unavailable."
+        ) from error
 
 
 @router.post("/avatar-uploads/complete", response_model=AvatarResponse)
@@ -60,11 +66,24 @@ async def complete_avatar_upload(
     service: Annotated[SocialProfileService, Depends(get_social_profile_service)],
 ) -> AvatarResponse:
     try:
-        return await service.complete_avatar_upload(principal.user_id, request.object_path)
+        return await service.complete_avatar_upload(
+            principal.user_id, request.object_path
+        )
     except AvatarUploadNotFoundError as error:
         raise HTTPException(404, "The uploaded avatar was not found.") from error
     except AvatarStorageError as error:
-        raise HTTPException(503, "Avatar storage is temporarily unavailable.") from error
+        raise HTTPException(
+            503, "Avatar storage is temporarily unavailable."
+        ) from error
+
+
+@router.delete("/avatar", status_code=204)
+async def remove_avatar(
+    principal: Annotated[Principal, Depends(require_permission("profile.read_own"))],
+    service: Annotated[SocialProfileService, Depends(get_social_profile_service)],
+) -> Response:
+    await service.remove_avatar(principal.user_id)
+    return Response(status_code=204)
 
 
 @router.get("/{user_id}", response_model=PublicProfileResponse)
@@ -135,4 +154,3 @@ async def unfollow(
     except ProfileNotFoundError as error:
         raise HTTPException(404, "Profile not found.") from error
     return Response(status_code=204)
-

@@ -4,16 +4,24 @@ import pytest
 
 from src.app.services.profile_avatar_service import ProfileAvatarService
 from src.entities.dto.profile_avatar import AvatarUploadRequest
-from src.entities.exceptions.profile_avatar import AvatarUploadNotFoundError, UnsupportedAvatarError
+from src.entities.exceptions.profile_avatar import (
+    AvatarUploadNotFoundError,
+    UnsupportedAvatarError,
+)
 
 
 class AvatarRepositoryStub:
     def __init__(self) -> None:
         self.saved: tuple[UUID, str] | None = None
+        self.cleared_user_id: UUID | None = None
         self.previous: str | None = None
 
     async def replace_avatar(self, user_id: UUID, object_path: str) -> str | None:
         self.saved = (user_id, object_path)
+        return self.previous
+
+    async def clear_avatar(self, user_id: UUID) -> str | None:
+        self.cleared_user_id = user_id
         return self.previous
 
 
@@ -25,7 +33,9 @@ class AvatarStorageStub:
     async def create_signed_upload(self, path: str) -> tuple[str, str]:
         return f"https://upload.test/{path}?token=signed", "signed"
 
-    async def object_is_valid(self, path: str, allowed_types: set[str], max_bytes: int) -> bool:
+    async def object_is_valid(
+        self, path: str, allowed_types: set[str], max_bytes: int
+    ) -> bool:
         assert allowed_types == {"image/jpeg", "image/png", "image/webp"}
         assert max_bytes == 2 * 1024 * 1024
         return self.exists
@@ -45,7 +55,9 @@ async def test_avatar_upload_is_scoped_to_user_and_replaces_previous_object() ->
     user_id = uuid4()
     upload = await service.prepare_upload(
         user_id,
-        AvatarUploadRequest(file_name="portrait.png", mime_type="image/png", file_size=1024),
+        AvatarUploadRequest(
+            file_name="portrait.png", mime_type="image/png", file_size=1024
+        ),
     )
     assert upload.object_path.startswith(f"{user_id}/")
     repository.previous = f"{user_id}/old.png"
@@ -62,7 +74,23 @@ async def test_avatar_rejects_unsupported_content_type_and_foreign_path() -> Non
     with pytest.raises(UnsupportedAvatarError):
         await service.prepare_upload(
             user_id,
-            AvatarUploadRequest(file_name="avatar.gif", mime_type="image/gif", file_size=10),
+            AvatarUploadRequest(
+                file_name="avatar.gif", mime_type="image/gif", file_size=10
+            ),
         )
     with pytest.raises(AvatarUploadNotFoundError):
         await service.complete_upload(user_id, f"{uuid4()}/avatar.png")
+
+
+@pytest.mark.asyncio
+async def test_remove_avatar_clears_profile_and_deletes_previous_object() -> None:
+    repository = AvatarRepositoryStub()
+    storage = AvatarStorageStub()
+    service = ProfileAvatarService(repository, storage)
+    user_id = uuid4()
+    repository.previous = f"{user_id}/portrait.webp"
+
+    await service.remove(user_id)
+
+    assert repository.cleared_user_id == user_id
+    assert storage.deleted == [repository.previous]

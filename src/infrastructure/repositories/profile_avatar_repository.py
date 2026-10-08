@@ -12,12 +12,28 @@ class SqlAlchemyProfileAvatarRepository:
 
     async def replace_avatar(self, user_id: UUID, object_path: str) -> str | None:
         previous = await self._session.scalar(
-            select(UserProfileModel.avatar_object_path).where(UserProfileModel.user_id == user_id)
+            select(UserProfileModel.avatar_object_path).where(
+                UserProfileModel.user_id == user_id
+            )
         )
         await self._session.execute(
             update(UserProfileModel)
             .where(UserProfileModel.user_id == user_id)
             .values(avatar_object_path=object_path)
+        )
+        await self._session.commit()
+        return previous
+
+    async def clear_avatar(self, user_id: UUID) -> str | None:
+        previous = await self._session.scalar(
+            select(UserProfileModel.avatar_object_path).where(
+                UserProfileModel.user_id == user_id
+            )
+        )
+        await self._session.execute(
+            update(UserProfileModel)
+            .where(UserProfileModel.user_id == user_id)
+            .values(avatar_object_path=None)
         )
         await self._session.commit()
         return previous
