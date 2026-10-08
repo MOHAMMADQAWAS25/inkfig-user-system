@@ -22,6 +22,7 @@ class NotificationItem(BaseModel):
     actor_name: str
     actor_avatar_url: str | None
     work_id: UUID | None
+    work_title: str | None
     created_at: datetime
     read: bool
 
@@ -75,9 +76,10 @@ async def list_notifications(
             text("""
         select n.notification_id, n.event_type, n.actor_user_id,
                coalesce(p.full_name, 'InkFig artist') actor_name,
-               p.avatar_object_path, n.work_id, n.created_at, n.read_at
+               p.avatar_object_path, n.work_id, w.title work_title, n.created_at, n.read_at
         from notifications n
         left join user_profiles p on p.user_id = n.actor_user_id
+        left join works w on w.work_id = n.work_id
         where n.recipient_user_id = :recipient
         order by n.created_at desc, n.notification_id desc limit :limit
     """),
@@ -103,6 +105,7 @@ async def list_notifications(
                 if row.avatar_object_path
                 else None,
                 work_id=row.work_id,
+                work_title=row.work_title,
                 created_at=row.created_at,
                 read=row.read_at is not None,
             )
