@@ -16,10 +16,14 @@ class AvatarRepositoryStub:
         self.saved: tuple[UUID, str] | None = None
         self.cleared_user_id: UUID | None = None
         self.previous: str | None = None
+        self.completed_cleanup: list[str] = []
 
     async def replace_avatar(self, user_id: UUID, object_path: str) -> str | None:
         self.saved = (user_id, object_path)
         return self.previous
+
+    async def complete_cleanup(self, object_path: str) -> None:
+        self.completed_cleanup.append(object_path)
 
     async def get_avatar(self, user_id: UUID) -> str | None:
         return self.previous
@@ -70,7 +74,23 @@ async def test_avatar_upload_is_scoped_to_user_and_replaces_previous_object() ->
     result = await service.complete_upload(user_id, upload.object_path)
     assert repository.saved == (user_id, upload.object_path)
     assert storage.deleted == [f"{user_id}/old.png"]
+    assert repository.completed_cleanup == [f"{user_id}/old.png"]
     assert result.avatar_url == f"https://cdn.test/{upload.object_path}"
+
+
+@pytest.mark.asyncio
+async def test_avatar_replacement_keeps_cleanup_job_when_storage_delete_fails() -> None:
+    repository = AvatarRepositoryStub()
+    storage = AvatarStorageStub()
+    service = ProfileAvatarService(repository, storage)
+    user_id = uuid4()
+    repository.previous = f"{user_id}/old.png"
+    storage.delete_fails = True
+
+    result = await service.complete_upload(user_id, f"{user_id}/new.png")
+
+    assert result.avatar_url == f"https://cdn.test/{user_id}/new.png"
+    assert repository.completed_cleanup == []
 
 
 @pytest.mark.asyncio

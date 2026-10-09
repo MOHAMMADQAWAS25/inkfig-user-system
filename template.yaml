@@ -141,6 +141,24 @@ Resources:
         Service: user-system-websocket
         Environment: !Ref Environment
 
+  AvatarCleanupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-avatar-cleanup"
+      CodeUri: .
+      Handler: src.avatar_cleanup_handler.handler
+      Timeout: 60
+      Tags:
+        Project: !Ref ProjectName
+        Service: user-system-avatar-cleanup
+        Environment: !Ref Environment
+      Events:
+        ScheduledCleanup:
+          Type: Schedule
+          Properties:
+            Schedule: rate(15 minutes)
+            Enabled: true
+
   WebSocketInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
