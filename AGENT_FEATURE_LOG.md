@@ -3048,3 +3048,89 @@ No migration required. The existing nullable `user_profiles.avatar_object_path` 
 ### Notes
 
 The practical clean-architecture guidance kept storage orchestration in the application service and SQL persistence in the repository.
+
+## 2026-10-09 - Durable cleanup for replaced profile pictures
+
+### Request
+
+Ensure that replacing a profile picture removes the previous object from Supabase Storage reliably, including automatic retries after temporary storage failures.
+
+### Changes
+
+- Made avatar replacement and old-object cleanup-job creation one database transaction.
+- Locked the profile row during replacement so concurrent avatar changes cannot lose track of an intermediate object.
+- Kept the existing immediate deletion attempt for fast cleanup.
+- Removed the cleanup job immediately when storage deletion succeeds.
+- Added an application service and repository for retrying due cleanup jobs with capped exponential backoff.
+- Added a scheduled Lambda that processes up to 50 due jobs every 15 minutes.
+- Kept profile-picture removal behavior unchanged: explicit removal still deletes storage before clearing the database reference.
+
+### Repositories
+
+- `inkfig-user-system`: added durable avatar-object cleanup persistence, retry processing, tests, and scheduled deployment infrastructure.
+
+### Files
+
+- `migrations/20261009_017_create_avatar_storage_cleanup_jobs.sql`: creates the protected cleanup-job table and due-job index.
+- `src/app/services/profile_avatar_service.py`: completes cleanup jobs after successful immediate deletion.
+- `src/app/services/avatar_cleanup_service.py`: processes due jobs and applies capped exponential retry delays.
+- `src/entities/repositories/avatar_cleanup.py`: defines cleanup job and persistence contracts.
+- `src/entities/repositories/profile_avatar.py`: adds successful-cleanup completion to the avatar repository contract.
+- `src/infrastructure/db/postgres/models/user_profile.py`: maps the cleanup-job table.
+- `src/infrastructure/repositories/profile_avatar_repository.py`: transactionally queues the previous object while replacing the avatar.
+- `src/infrastructure/repositories/avatar_cleanup_repository.py`: reads, completes, and reschedules cleanup jobs.
+- `src/avatar_cleanup_handler.py`: wires the scheduled Lambda handler.
+- `template.yaml`: schedules avatar cleanup every 15 minutes.
+- `tests/test_avatar_cleanup.py`: verifies successful deletion and retry behavior.
+- `tests/test_profile_avatars.py`: verifies immediate cleanup completion and failure retention.
+
+### API
+
+No API changes.
+
+### Database
+
+- Migration: `20261009_017_create_avatar_storage_cleanup_jobs.sql`
+- Adds `avatar_storage_cleanup_jobs`, keyed by the unique storage object path, with attempt count, next-attempt timestamp, last error, and audit timestamps.
+- Adds an index on `next_attempt_at, created_at` for ordered due-job polling.
+- Enables row-level security, revokes access from `anon` and `authenticated`, and grants service-role access.
+- Existing avatar replacements require no backfill because old untracked storage objects cannot be reconstructed safely from database state.
+- Rollback requires disabling the scheduled cleanup Lambda before dropping the table; queued old objects should be processed before rollback to avoid leaving them in storage.
+
+### Permissions and scope
+
+- Authenticated users retain the existing permission to change only their own profile picture.
+- Cleanup processing is internal and has no user-facing role or permission.
+- Backend ownership checks and user-scoped storage paths remain enforced by the existing avatar completion flow.
+
+### Frontend
+
+No frontend changes.
+
+### Verification
+
+- `[passed] uv run ruff check` on all changed Python files
+- `[passed] uv run pytest tests/test_profile_avatars.py tests/test_avatar_cleanup.py -q` — 7 passed
+- `[passed] uv run --with-requirements requirements.txt pytest -q` — 73 passed
+- `[passed] uv run --with-requirements requirements.txt mypy src tests` — 115 source files
+- `[passed] sam validate --lint`
+- `[passed] sam build`
+- `[passed] git diff --check`
+- `[failed] uv run pytest -q without locked requirements — local environment did not have the existing boto3 dependency; rerun with requirements passed`
+- `[failed] uv run mypy src tests without locked requirements — local environment did not have the existing boto3 dependency; rerun with requirements passed`
+
+### Deployment
+
+- Deploy `inkfig-user-system`, including the API and new scheduled avatar-cleanup Lambda.
+- Run `20261009_017_create_avatar_storage_cleanup_jobs.sql` before the new Lambda is enabled; the deployment workflow runs migrations before SAM deployment.
+- No environment-variable changes are required.
+
+### Git
+
+- Branch: `main`
+- Commit: `b8a8e68`
+- Push: `successful`
+
+### Notes
+
+Deletion retries are idempotent because a missing storage object is treated as already deleted. Retry delays grow exponentially and are capped at 24 hours; successful deletion permanently removes the job.
