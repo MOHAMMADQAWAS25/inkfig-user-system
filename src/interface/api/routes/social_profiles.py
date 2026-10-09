@@ -82,7 +82,12 @@ async def remove_avatar(
     principal: Annotated[Principal, Depends(require_permission("profile.read_own"))],
     service: Annotated[SocialProfileService, Depends(get_social_profile_service)],
 ) -> Response:
-    await service.remove_avatar(principal.user_id)
+    try:
+        await service.remove_avatar(principal.user_id)
+    except AvatarStorageError as error:
+        raise HTTPException(
+            503, "Avatar storage is temporarily unavailable."
+        ) from error
     return Response(status_code=204)
 
 

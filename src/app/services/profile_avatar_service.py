@@ -57,9 +57,7 @@ class ProfileAvatarService:
         return AvatarResponse(avatar_url=self._storage.public_url(object_path))
 
     async def remove(self, user_id: UUID) -> None:
-        previous = await self._repository.clear_avatar(user_id)
+        previous = await self._repository.get_avatar(user_id)
         if previous:
-            try:
-                await self._storage.delete(previous)
-            except AvatarStorageError:
-                pass
+            await self._storage.delete(previous)
+        await self._repository.clear_avatar(user_id)

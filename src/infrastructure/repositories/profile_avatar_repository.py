@@ -24,16 +24,17 @@ class SqlAlchemyProfileAvatarRepository:
         await self._session.commit()
         return previous
 
-    async def clear_avatar(self, user_id: UUID) -> str | None:
-        previous = await self._session.scalar(
+    async def get_avatar(self, user_id: UUID) -> str | None:
+        return await self._session.scalar(
             select(UserProfileModel.avatar_object_path).where(
                 UserProfileModel.user_id == user_id
             )
         )
+
+    async def clear_avatar(self, user_id: UUID) -> None:
         await self._session.execute(
             update(UserProfileModel)
             .where(UserProfileModel.user_id == user_id)
             .values(avatar_object_path=None)
         )
         await self._session.commit()
-        return previous

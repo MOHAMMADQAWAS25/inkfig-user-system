@@ -5,6 +5,7 @@ import pytest
 from src.app.services.profile_avatar_service import ProfileAvatarService
 from src.entities.dto.profile_avatar import AvatarUploadRequest
 from src.entities.exceptions.profile_avatar import (
+    AvatarStorageError,
     AvatarUploadNotFoundError,
     UnsupportedAvatarError,
 )
@@ -20,14 +21,17 @@ class AvatarRepositoryStub:
         self.saved = (user_id, object_path)
         return self.previous
 
-    async def clear_avatar(self, user_id: UUID) -> str | None:
-        self.cleared_user_id = user_id
+    async def get_avatar(self, user_id: UUID) -> str | None:
         return self.previous
+
+    async def clear_avatar(self, user_id: UUID) -> None:
+        self.cleared_user_id = user_id
 
 
 class AvatarStorageStub:
     def __init__(self) -> None:
         self.exists = True
+        self.delete_fails = False
         self.deleted: list[str] = []
 
     async def create_signed_upload(self, path: str) -> tuple[str, str]:
@@ -41,6 +45,8 @@ class AvatarStorageStub:
         return self.exists
 
     async def delete(self, path: str) -> None:
+        if self.delete_fails:
+            raise AvatarStorageError
         self.deleted.append(path)
 
     def public_url(self, path: str) -> str:
@@ -94,3 +100,19 @@ async def test_remove_avatar_clears_profile_and_deletes_previous_object() -> Non
 
     assert repository.cleared_user_id == user_id
     assert storage.deleted == [repository.previous]
+
+
+@pytest.mark.asyncio
+async def test_remove_avatar_keeps_database_reference_when_storage_delete_fails() -> (
+    None
+):
+    repository = AvatarRepositoryStub()
+    storage = AvatarStorageStub()
+    service = ProfileAvatarService(repository, storage)
+    repository.previous = f"{uuid4()}/portrait.webp"
+    storage.delete_fails = True
+
+    with pytest.raises(AvatarStorageError):
+        await service.remove(uuid4())
+
+    assert repository.cleared_user_id is None
