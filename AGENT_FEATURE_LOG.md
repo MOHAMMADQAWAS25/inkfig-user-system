@@ -2979,3 +2979,72 @@ No migration required. The existing nullable `user_profiles.avatar_object_path` 
 ### Notes
 
 The practical clean-architecture guidance kept the authenticated route, application workflow, persistence update, and Supabase cleanup in their respective layers.
+
+## 2026-10-09 - Guarantee avatar storage deletion
+
+### Request
+
+Ensure that removing a profile picture deletes the actual file from Supabase Storage as well as clearing its database reference.
+
+### Changes
+
+- Changed avatar removal to read the current object path before modifying the profile.
+- Deletes the Supabase Storage object first and clears the database reference only after deletion succeeds.
+- Returns a storage-unavailable error when object deletion fails, preserving the current database reference for a safe retry.
+- Removing an already-empty avatar remains idempotent and clears the nullable reference.
+- Intentionally left avatar replacement, crop processing, registration, and other profile fields unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: guarantees storage deletion before clearing the avatar reference.
+- `inkfig-user-FE`: adds client-side profile-picture cropping before upload.
+
+### Files
+
+- `src/entities/repositories/profile_avatar.py`: separates current-avatar lookup from clearing.
+- `src/infrastructure/repositories/profile_avatar_repository.py`: implements lookup and explicit nullable clearing.
+- `src/app/services/profile_avatar_service.py`: orders storage deletion before database clearing.
+- `src/interface/api/routes/social_profiles.py`: returns 503 when required storage deletion fails.
+- `tests/test_profile_avatars.py`: verifies successful cleanup and database preservation on storage failure.
+
+### API
+
+- `DELETE /api/v1/profiles/avatar`: still returns 204 on success; now returns 503 if Supabase Storage deletion fails and leaves the current avatar reference unchanged.
+
+### Database
+
+No migration required. The existing nullable `user_profiles.avatar_object_path` column remains unchanged.
+
+### Permissions and scope
+
+- Requires `profile.read_own`.
+- Users can remove only the object path associated with their authenticated profile.
+- Ownership and authorization are validated by the backend.
+
+### Frontend
+
+- No backend-repository frontend files changed; `inkfig-user-FE` independently adds the crop dialog.
+
+### Verification
+
+- `[passed] uv run --with ruff ruff check src/entities/repositories/profile_avatar.py src/infrastructure/repositories/profile_avatar_repository.py src/app/services/profile_avatar_service.py src/interface/api/routes/social_profiles.py tests/test_profile_avatars.py`
+- `[passed] uv run --with-requirements requirements.txt --with pytest --with pytest-asyncio pytest -q tests/test_profile_avatars.py` — 4 passed
+- `[passed] uv run --with-requirements requirements.txt --with pytest --with pytest-asyncio pytest -q` — 70 passed
+- `[passed] uv run --with-requirements requirements.txt mypy src` — 95 source files
+- `[passed] git diff --check`
+
+### Deployment
+
+- Deploy `inkfig-user-system`.
+- No migrations are required before deployment.
+- No environment-variable or configuration changes.
+
+### Git
+
+- Branch: `main`
+- Commit: `2868b3f`
+- Push: `successful`
+
+### Notes
+
+The practical clean-architecture guidance kept storage orchestration in the application service and SQL persistence in the repository.
