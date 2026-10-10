@@ -3182,3 +3182,42 @@ Ensure pagination is implemented for every growing collection in the project.
 
 - Branch: `feature/complete-list-pagination`
 - Commit, rebase, merge, and push: completed after final synchronization.
+
+## 2026-10-10 - Content and account reporting API
+
+### Request
+
+Allow users to report posts or other users with standard or written reasons, and provide administrators a queue where they can review reports and decide what action to take.
+
+### Changes
+
+- Added an auditable `content_reports` queue for user and work targets, standard reason codes, optional details, review notes, and resolution timestamps.
+- Added duplicate-report protection separately for each reporter/user and reporter/work pair.
+- Added permission-gated endpoints to submit reports, list a bounded paginated moderation queue, and update report status.
+- Rejects self-reports, reports against unavailable accounts, and work reports whose published work does not belong to the declared target.
+- Granted report creation to signed-in application roles and report management to administrators.
+- Enabled row-level security and restricted direct table access to the backend service role.
+
+### API and database
+
+- `POST /api/v1/reports`
+- `GET /api/v1/reports?status=&limit=&cursor=`
+- `PATCH /api/v1/reports/{report_id}`
+- Migration: `20261010_018_create_content_reports.sql`
+
+### Verification
+
+- `[passed] git diff --check`
+- `[passed] static regression coverage` - permissions, bounded pagination, duplicate indexes, self-report prevention, audit fields, and RLS.
+- `[not run] pytest and mypy` - no Python interpreter or `uv` executable is installed in this workspace; GitHub Actions must run the backend suite.
+
+### Deployment
+
+- Run migration `20261010_018_create_content_reports.sql`, then deploy `inkfig-user-system` before `inkfig-user-FE`.
+- No secret or environment-variable change is required.
+- Route/module initialization remains import-safe for AWS Lambda SnapStart.
+
+### Git
+
+- Branch: `feature/content-reporting`
+- Commit, rebase, merge, and push: completed after final synchronization.
