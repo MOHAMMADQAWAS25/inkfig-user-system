@@ -15,7 +15,7 @@ from src.infrastructure.integrations.notification_realtime import (
 from src.interface.dependencies.authorization import Principal, require_permission
 
 router = APIRouter(prefix="/reports", tags=["reports"])
-ReasonCode = Literal["harassment", "hate_speech", "sexual_content", "violence", "spam", "copyright", "impersonation", "other"]
+ReasonCode = Literal["harassment", "hate_speech", "violence", "spam", "copyright", "impersonation", "other"]
 ReportStatus = Literal["pending", "reviewed", "dismissed", "actioned"]
 
 
@@ -30,10 +30,16 @@ class CreateReportRequest(BaseModel):
     def validate_target_and_details(self) -> "CreateReportRequest":
         if (self.target_type == "work") != (self.target_work_id is not None):
             raise ValueError("A work report requires a work identifier.")
+        if self.target_type == "user" and self.reason_code not in {
+            "impersonation", "harassment", "spam", "hate_speech", "other"
+        }:
+            raise ValueError("This reason is only available for work reports.")
         if self.details is not None:
             self.details = " ".join(self.details.split()) or None
             if self.details is not None and len(self.details) < 10:
                 raise ValueError("Report details must contain at least 10 characters.")
+        if self.reason_code == "other" and self.details is None:
+            raise ValueError("Additional details are required for Other reports.")
         return self
 
 

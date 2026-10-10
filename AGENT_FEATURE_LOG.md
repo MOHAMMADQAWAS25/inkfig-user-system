@@ -3381,3 +3381,28 @@ No migration required.
 ### Notes
 
 The WebSocket message is an invalidation signal rather than report content. Authorized clients retrieve the canonical paginated report queue through the protected API.
+
+## 2026-10-11 - Separate report reasons and require Other explanations
+
+### Request and scope
+
+Remove Sexual content from new reports, use account-specific reasons and require additional details when Other is selected for either accounts or posts. User-system owns validation; frontend owns the popup. Main-system remains unchanged.
+
+### Changes and files
+
+- `src/interface/api/routes/reports.py`: reject the removed reason for new submissions; restrict user reasons to impersonation, harassment, spam, hate speech and other. Require nonempty normalized details for other while preserving 10-2000 character limits.
+- `tests/test_content_reports.py`: cover both targets, missing/blank/short/normalized details, length boundaries, user reason restrictions and post-only reasons.
+- `AGENT_FEATURE_LOG.md`: record implementation and verification.
+
+### API, database and permissions
+
+POST /api/v1/reports returns validation errors for invalid reasons or missing Other details. Response/list/review contracts remain unchanged. Existing historical reports remain readable/reviewable, including sexual_content and Other records without explanations.
+No migration required: existing database reason codes and nullable 10-2000-character details support the new API behavior. The conditional Other requirement is enforced in the API, not added to the database constraint; direct privileged SQL remains governed by the existing schema. No permission, data-scope, secrets or environment changes. Validation is request-time and SnapStart-compatible.
+
+### Frontend and verification
+
+Companion frontend has separate reason lists, user default impersonation, localized required label and client validation. 95 pytest tests passed; mypy passed on 117 files. One upstream TestClient deprecation warning remains. Initial type check found duplicate new test definitions; cleaned and rerun successfully. Git diff whitespace validation passed.
+
+### Deployment
+
+Deploy user-system before frontend through existing main workflows. Main-system needs no deployment. Legacy records are preserved; no production reports were submitted during verification.
