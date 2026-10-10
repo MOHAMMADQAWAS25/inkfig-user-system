@@ -3183,6 +3183,72 @@ Ensure pagination is implemented for every growing collection in the project.
 - Branch: `feature/complete-list-pagination`
 - Commit, rebase, merge, and push: completed after final synchronization.
 
+## 2026-10-10 - Fix reports status-filter database error
+
+### Request
+
+Resolve the production `500 Internal Server Error` returned by the administrator reports queue when filtering reports by status.
+
+### Changes
+
+- Explicitly cast the optional report-status SQL bind parameter to PostgreSQL `text`.
+- Prevented asyncpg from raising `AmbiguousParameterError` for the nullable status condition.
+- Added a regression assertion for the typed status filter.
+- Left report permissions, response fields, pagination, moderation workflow, and frontend behavior unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: fixed the reports-list SQL parameter typing and added regression coverage.
+
+### Files
+
+- `src/interface/api/routes/reports.py`: casts the status bind parameter in the reports-list query.
+- `tests/test_content_reports.py`: verifies the query retains the explicit cast.
+
+### API
+
+- `GET /api/v1/reports`: status-filtered requests now execute successfully instead of returning HTTP 500.
+- Request fields, response schema, `reports.manage` permission, limits, cursors, validation, and error conditions remain unchanged.
+
+### Database
+
+No migration required.
+
+### Permissions and scope
+
+- Requires `reports.manage`.
+- Accessible to admin and system-administrator roles through their existing permission assignments.
+- Authorization continues to be validated by the backend.
+
+### Frontend
+
+No frontend changes.
+
+### Verification
+
+- `[passed] uv run --with-requirements requirements.txt pytest -q` — 75 passed
+- `[passed] uv run --with-requirements requirements.txt mypy src tests` — 117 source files
+- `[passed] uv run --with-requirements requirements.txt ruff check src/interface/api/routes/reports.py tests/test_content_reports.py`
+- `[passed] uv run --with-requirements requirements.txt pytest -q tests/test_content_reports.py` — 2 passed
+- `[passed] sam validate --lint`
+- `[passed] git diff --check`
+- `[failed] initial focused ruff check — pre-existing extra blank line in the modified test was reported and corrected before the successful rerun`
+
+### Deployment
+
+- Deploy `inkfig-user-system`.
+- No migration or environment-variable changes are required.
+
+### Git
+
+- Branch: `main`
+- Commit: `84f8c30`
+- Push: `successful`
+
+### Notes
+
+CloudWatch identified asyncpg `AmbiguousParameterError` for the untyped nullable `status` bind parameter. Explicit casting keeps the optional-filter query compatible with PostgreSQL prepared statements.
+
 ## 2026-10-10 - Content and account reporting API
 
 ### Request
