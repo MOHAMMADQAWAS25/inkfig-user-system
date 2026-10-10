@@ -3313,3 +3313,71 @@ Fix the mypy failure in the report review endpoint because generic SQLAlchemy re
 
 - Branch: `fix/report-rowcount-typing`
 - Commit, rebase, merge, and push: completed after final synchronization.
+
+## 2026-10-10 - Broadcast new reports to administrators
+
+### Request
+
+Use the existing WebSocket connection to deliver new report updates live to administrators.
+
+### Changes
+
+- Added a `reports.changed` WebSocket event after a report is successfully committed.
+- Targets every active, verified, connected account whose current role has `reports.manage`.
+- Reused common API Gateway delivery and stale-connection cleanup logic.
+- Kept report persistence authoritative so disconnected administrators still see reports after reconnecting or opening the queue.
+- Left ordinary social-notification behavior unchanged.
+
+### Repositories
+
+- `inkfig-user-system`: broadcasts permission-scoped report invalidation events.
+- `inkfig-user-FE`: consumes the event and refreshes the administration report queue.
+
+### Files
+
+- `src/infrastructure/integrations/notification_realtime.py`: selects eligible administrator connections and publishes `reports.changed`.
+- `src/interface/api/routes/reports.py`: broadcasts only after successful report persistence.
+- `tests/test_notification_websocket.py`: verifies the permission scope, event contract, and report hook.
+
+### API
+
+- `POST /api/v1/reports`: response behavior is unchanged; after a successful commit it now emits a best-effort `reports.changed` WebSocket event.
+- No request or response schema changes.
+
+### Database
+
+No migration required.
+
+### Permissions and scope
+
+- Report submission still requires `reports.create`.
+- Live report events are sent only to connected users whose current active role has `reports.manage`.
+- Admin and system-administrator roles currently receive the event.
+- Eligibility is calculated by the backend from role permissions and active verified account state.
+
+### Frontend
+
+- The companion frontend change converts `reports.changed` into a live administration-queue refresh.
+
+### Verification
+
+- `[passed] uv run --with-requirements requirements.txt ruff check` on changed backend files
+- `[passed] uv run --with-requirements requirements.txt pytest -q` — 75 passed
+- `[passed] uv run --with-requirements requirements.txt mypy src tests` — 117 source files
+- `[passed] sam validate --lint`
+- `[passed] git diff --check`
+
+### Deployment
+
+- Deploy `inkfig-user-system` and `inkfig-user-FE`.
+- No migrations or environment-variable changes are required.
+
+### Git
+
+- Branch: `main`
+- Commit: `19099a2`
+- Push: `successful`
+
+### Notes
+
+The WebSocket message is an invalidation signal rather than report content. Authorized clients retrieve the canonical paginated report queue through the protected API.
