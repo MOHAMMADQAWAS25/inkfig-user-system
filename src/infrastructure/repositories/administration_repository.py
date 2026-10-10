@@ -16,8 +16,8 @@ class SqlAlchemyAdministrationRepository:
     def _statement(self) -> Select[Any]:
         return select(UserAccountModel, UserProfileModel.full_name, UserRoleModel.role_code).join(UserProfileModel, UserProfileModel.user_id == UserAccountModel.user_id).join(UserRoleModel, UserRoleModel.user_id == UserAccountModel.user_id)
 
-    async def list_users(self) -> list[UserAdministrationResponse]:
-        rows = (await self._session.execute(self._statement().order_by(UserAccountModel.created_at.desc()))).all()
+    async def list_users(self, limit: int, offset: int) -> list[UserAdministrationResponse]:
+        rows = (await self._session.execute(self._statement().order_by(UserAccountModel.created_at.desc(), UserAccountModel.user_id).limit(limit).offset(offset))).all()
         return [self._to_response(*row) for row in rows]
 
     async def get_user(self, user_id: UUID) -> UserAdministrationResponse | None:

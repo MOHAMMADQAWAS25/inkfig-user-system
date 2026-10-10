@@ -30,6 +30,7 @@ class NotificationItem(BaseModel):
 class NotificationFeed(BaseModel):
     items: list[NotificationItem]
     unread_count: int
+    next_cursor: int | None = None
 
 
 class WebSocketTicket(BaseModel):
@@ -70,6 +71,7 @@ async def list_notifications(
     session: Annotated[AsyncSession, Depends(get_database_session)],
     settings: Annotated[Settings, Depends(get_settings)],
     limit: int = Query(50, ge=1, le=100),
+    cursor: int = Query(0, ge=0, le=100_000),
 ) -> NotificationFeed:
     rows = (
         await session.execute(
@@ -81,11 +83,11 @@ async def list_notifications(
         left join user_profiles p on p.user_id = n.actor_user_id
         left join works w on w.work_id = n.work_id
         where n.recipient_user_id = :recipient
-        order by n.created_at desc, n.notification_id desc limit :limit
+        order by n.created_at desc, n.notification_id desc limit :limit offset :cursor
     """),
-            {"recipient": principal.user_id, "limit": limit},
+            {"recipient": principal.user_id, "limit": limit + 1, "cursor": cursor},
         )
-    ).mappings()
+    ).mappings().all()
     unread = await session.scalar(
         text(
             "select count(*) from notifications where recipient_user_id=:recipient and read_at is null"
@@ -109,9 +111,10 @@ async def list_notifications(
                 created_at=row.created_at,
                 read=row.read_at is not None,
             )
-            for row in rows
+            for row in rows[:limit]
         ],
         unread_count=int(unread or 0),
+        next_cursor=cursor + limit if len(rows) > limit else None,
     )
 
 

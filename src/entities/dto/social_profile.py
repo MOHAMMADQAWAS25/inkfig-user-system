@@ -23,6 +23,7 @@ class ProfileAccountSummary(BaseModel):
 
 class ProfileAccountListResponse(BaseModel):
     items: list[ProfileAccountSummary]
+    next_cursor: int | None = None
 
 
 class ProfileSearchResult(BaseModel):

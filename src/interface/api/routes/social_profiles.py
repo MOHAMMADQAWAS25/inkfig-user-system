@@ -108,11 +108,12 @@ async def followers(
     user_id: UUID,
     principal: Annotated[Principal, Depends(require_permission("profile.read_own"))],
     service: Annotated[SocialProfileService, Depends(get_social_profile_service)],
+    limit: int = Query(50, ge=1, le=100),
+    cursor: int = Query(0, ge=0, le=100_000),
 ) -> ProfileAccountListResponse:
     try:
-        return ProfileAccountListResponse(
-            items=await service.list_followers(user_id, principal.user_id)
-        )
+        items, next_cursor = await service.list_followers(user_id, principal.user_id, limit, cursor)
+        return ProfileAccountListResponse(items=items, next_cursor=next_cursor)
     except ProfileNotFoundError as error:
         raise HTTPException(404, "Profile not found.") from error
 
@@ -122,11 +123,12 @@ async def following(
     user_id: UUID,
     principal: Annotated[Principal, Depends(require_permission("profile.read_own"))],
     service: Annotated[SocialProfileService, Depends(get_social_profile_service)],
+    limit: int = Query(50, ge=1, le=100),
+    cursor: int = Query(0, ge=0, le=100_000),
 ) -> ProfileAccountListResponse:
     try:
-        return ProfileAccountListResponse(
-            items=await service.list_following(user_id, principal.user_id)
-        )
+        items, next_cursor = await service.list_following(user_id, principal.user_id, limit, cursor)
+        return ProfileAccountListResponse(items=items, next_cursor=next_cursor)
     except ProfileNotFoundError as error:
         raise HTTPException(404, "Profile not found.") from error
 

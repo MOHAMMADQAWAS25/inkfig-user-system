@@ -63,24 +63,24 @@ class SocialProfileService:
         return profile
 
     async def list_followers(
-        self, profile_user_id: UUID, viewer_user_id: UUID
-    ) -> list[ProfileAccountSummary]:
+        self, profile_user_id: UUID, viewer_user_id: UUID, limit: int, cursor: int
+    ) -> tuple[list[ProfileAccountSummary], int | None]:
         accounts = await self._repository.list_followers(
-            profile_user_id, viewer_user_id
+            profile_user_id, viewer_user_id, limit + 1, cursor
         )
         if accounts is None:
             raise ProfileNotFoundError
-        return accounts
+        return accounts[:limit], cursor + limit if len(accounts) > limit else None
 
     async def list_following(
-        self, profile_user_id: UUID, viewer_user_id: UUID
-    ) -> list[ProfileAccountSummary]:
+        self, profile_user_id: UUID, viewer_user_id: UUID, limit: int, cursor: int
+    ) -> tuple[list[ProfileAccountSummary], int | None]:
         accounts = await self._repository.list_following(
-            profile_user_id, viewer_user_id
+            profile_user_id, viewer_user_id, limit + 1, cursor
         )
         if accounts is None:
             raise ProfileNotFoundError
-        return accounts
+        return accounts[:limit], cursor + limit if len(accounts) > limit else None
 
     async def set_follow(
         self, follower_user_id: UUID, followed_user_id: UUID, following: bool

@@ -3134,3 +3134,51 @@ No frontend changes.
 ### Notes
 
 Deletion retries are idempotent because a missing storage object is treated as already deleted. Retry delays grow exponentially and are capped at 24 hours; successful deletion permanently removes the job.
+
+## 2026-10-10 - Complete pagination for user-service collections
+
+### Request
+
+Ensure pagination is implemented for every growing collection in the project.
+
+### Changes
+
+- Added bounded offset cursors and `next_cursor` responses to notification history.
+- Added bounded pagination to follower and following account lists through route, service, repository, and SQL layers.
+- Replaced the unbounded administration user response with a paginated page contract and bounded repository query.
+- Uses limit-plus-one queries to detect continuation without separate count requests.
+- Preserved authorization, active-account visibility, ordering, unread counts, follow state, and administration mutations.
+
+### Repositories
+
+- `inkfig-user-system`: missing collection pagination contracts and queries.
+- `inkfig-user-FE`: consumes all new continuation cursors.
+- `inkfig-main-system`: no changes; all growing work collections were already paginated.
+
+### API
+
+- `GET /api/v1/notifications`: adds optional `cursor` and response `next_cursor`.
+- `GET /api/v1/profiles/{user_id}/followers`: adds `limit`, `cursor`, and `next_cursor`.
+- `GET /api/v1/profiles/{user_id}/following`: adds `limit`, `cursor`, and `next_cursor`.
+- `GET /api/v1/admin/users`: now returns `{items,next_cursor}` and accepts `limit` and `cursor`.
+
+### Database and permissions
+
+- No migration required; existing ordered columns and relationships are reused.
+- Existing `profile.read_own` and `users.read` authorization remains backend-enforced.
+
+### Verification
+
+- `[passed] git diff --check`
+- `[passed] contract and query audit` - every growing user-service list now accepts a bounded cursor.
+- `[not run] pytest and mypy` - no Python interpreter or `uv` executable is installed in this workspace; GitHub Actions must run the backend suite.
+
+### Deployment
+
+- Deploy `inkfig-user-system` before `inkfig-user-FE` because response contracts gain continuation fields and administration changes to a page object.
+- No migration, secret, or environment-variable change is required.
+
+### Git
+
+- Branch: `feature/complete-list-pagination`
+- Commit, rebase, merge, and push: completed after final synchronization.

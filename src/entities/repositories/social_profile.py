@@ -18,11 +18,11 @@ class SocialProfileRepository(Protocol):
     ) -> PublicProfileResponse | None: ...
 
     async def list_followers(
-        self, profile_user_id: UUID, viewer_user_id: UUID
+        self, profile_user_id: UUID, viewer_user_id: UUID, limit: int, offset: int
     ) -> list[ProfileAccountSummary] | None: ...
 
     async def list_following(
-        self, profile_user_id: UUID, viewer_user_id: UUID
+        self, profile_user_id: UUID, viewer_user_id: UUID, limit: int, offset: int
     ) -> list[ProfileAccountSummary] | None: ...
 
     async def set_follow(

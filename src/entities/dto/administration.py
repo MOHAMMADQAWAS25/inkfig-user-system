@@ -11,6 +11,11 @@ class UserAdministrationResponse(BaseModel):
     is_active: bool
 
 
+class UserAdministrationPage(BaseModel):
+    items: list[UserAdministrationResponse]
+    next_cursor: int | None = None
+
+
 class ChangeRoleRequest(BaseModel):
     role: Role
 

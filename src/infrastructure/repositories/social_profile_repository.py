@@ -110,21 +110,21 @@ class SqlAlchemySocialProfileRepository:
         )
 
     async def list_followers(
-        self, profile_user_id: UUID, viewer_user_id: UUID
+        self, profile_user_id: UUID, viewer_user_id: UUID, limit: int, offset: int
     ) -> list[ProfileAccountSummary] | None:
         return await self._list_connections(
-            profile_user_id, viewer_user_id, followers=True
+            profile_user_id, viewer_user_id, limit, offset, followers=True
         )
 
     async def list_following(
-        self, profile_user_id: UUID, viewer_user_id: UUID
+        self, profile_user_id: UUID, viewer_user_id: UUID, limit: int, offset: int
     ) -> list[ProfileAccountSummary] | None:
         return await self._list_connections(
-            profile_user_id, viewer_user_id, followers=False
+            profile_user_id, viewer_user_id, limit, offset, followers=False
         )
 
     async def _list_connections(
-        self, profile_user_id: UUID, viewer_user_id: UUID, *, followers: bool
+        self, profile_user_id: UUID, viewer_user_id: UUID, limit: int, offset: int, *, followers: bool
     ) -> list[ProfileAccountSummary] | None:
         exists = await self._session.scalar(
             text(
@@ -164,11 +164,14 @@ class SqlAlchemySocialProfileRepository:
                       and a.account_status = 'active'
                       and a.email_verified_at is not null
                     order by f.created_at desc, p.user_id
+                    limit :limit offset :offset
                     """
                 ),
                 {
                     "profile_user_id": profile_user_id,
                     "viewer_user_id": viewer_user_id,
+                    "limit": limit,
+                    "offset": offset,
                 },
             )
         ).mappings()

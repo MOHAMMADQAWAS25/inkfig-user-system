@@ -12,8 +12,9 @@ class AdministrationService:
     def __init__(self, repository: AdministrationRepository) -> None:
         self._repository = repository
 
-    async def list_users(self) -> list[UserAdministrationResponse]:
-        return await self._repository.list_users()
+    async def list_users(self, limit: int, cursor: int) -> tuple[list[UserAdministrationResponse], int | None]:
+        users = await self._repository.list_users(limit + 1, cursor)
+        return users[:limit], cursor + limit if len(users) > limit else None
 
     async def change_role(self, actor_id: UUID, actor_role: Role, target_id: UUID, role: Role) -> UserAdministrationResponse:
         target = await self._required_target(target_id)
