@@ -99,8 +99,8 @@ async def list_reports(_: Annotated[Principal, Depends(require_permission("repor
 @router.patch("/{report_id}", status_code=204)
 async def review_report(report_id: UUID, request: ReviewReportRequest, principal: Annotated[Principal, Depends(require_permission("reports.manage"))], session: Annotated[AsyncSession, Depends(get_database_session)]) -> Response:
     notes = " ".join(request.notes.split()) if request.notes else None
-    result = await session.execute(text("update content_reports set status=:status,reviewer_user_id=:reviewer,reviewer_notes=:notes,reviewed_at=now() where report_id=:report_id"), {"status": request.status, "reviewer": principal.user_id, "notes": notes, "report_id": report_id})
-    if result.rowcount == 0:
+    result = await session.execute(text("update content_reports set status=:status,reviewer_user_id=:reviewer,reviewer_notes=:notes,reviewed_at=now() where report_id=:report_id returning report_id"), {"status": request.status, "reviewer": principal.user_id, "notes": notes, "report_id": report_id})
+    if result.scalar_one_or_none() is None:
         raise HTTPException(404, "Report not found.")
     await session.commit()
     return Response(status_code=204)

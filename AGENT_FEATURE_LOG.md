@@ -3221,3 +3221,29 @@ Allow users to report posts or other users with standard or written reasons, and
 
 - Branch: `feature/content-reporting`
 - Commit, rebase, merge, and push: completed after final synchronization.
+
+## 2026-10-10 - Fix report review SQLAlchemy typing
+
+### Request
+
+Fix the mypy failure in the report review endpoint because generic SQLAlchemy results do not expose a typed `rowcount` attribute.
+
+### Changes
+
+- Changed the report status update to return its `report_id` from PostgreSQL.
+- Uses the typed `scalar_one_or_none()` result to preserve the existing 404 behavior without relying on driver-specific `rowcount` typing.
+- Added regression assertions that prevent reintroducing the untyped `rowcount` access.
+
+### Verification
+
+- `[passed] git diff --check`
+- `[not run] python -m mypy src tests` - the local machine does not have a `python` executable; the exact command must run in GitHub Actions.
+
+### Deployment
+
+- Deploy `inkfig-user-system`; no migration, secret, environment-variable, or SnapStart configuration change is required.
+
+### Git
+
+- Branch: `fix/report-rowcount-typing`
+- Commit, rebase, merge, and push: completed after final synchronization.

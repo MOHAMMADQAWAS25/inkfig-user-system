@@ -12,6 +12,9 @@ def test_report_endpoints_are_permission_gated_and_paginated() -> None:
     assert "limit: int = Query(25, ge=1, le=100)" in ROUTE
     assert "next_cursor" in ROUTE
     assert "You cannot report yourself or your own work" in ROUTE
+    assert "returning report_id" in ROUTE
+    assert "scalar_one_or_none()" in ROUTE
+    assert ".rowcount" not in ROUTE
 
 
 def test_report_schema_keeps_an_auditable_moderation_queue() -> None:
