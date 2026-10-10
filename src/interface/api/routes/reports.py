@@ -9,6 +9,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.infrastructure.db.postgres.session import get_database_session
+from src.infrastructure.integrations.notification_realtime import (
+    publish_reports_changed,
+)
 from src.interface.dependencies.authorization import Principal, require_permission
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -75,6 +78,7 @@ async def create_report(request: CreateReportRequest, principal: Annotated[Princ
     try:
         await session.execute(text("insert into content_reports(reporter_user_id,target_type,target_user_id,target_work_id,reason_code,details) values(:reporter,:target_type,:target_user,:target_work,:reason,:details)"), {"reporter": principal.user_id, "target_type": request.target_type, "target_user": request.target_user_id, "target_work": request.target_work_id, "reason": request.reason_code, "details": request.details})
         await session.commit()
+        await publish_reports_changed(session)
     except IntegrityError as error:
         await session.rollback()
         raise HTTPException(409, "You have already reported this subject.") from error

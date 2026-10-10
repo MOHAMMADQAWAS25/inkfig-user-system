@@ -19,7 +19,14 @@ def test_websocket_notification_contract_and_infrastructure() -> None:
     ).read_text()
     template = (ROOT / "template.yaml").read_text()
     handler = (ROOT / "src" / "websocket_handler.py").read_text()
+    realtime = (
+        ROOT / "src" / "infrastructure" / "integrations" / "notification_realtime.py"
+    ).read_text()
+    reports = (ROOT / "src" / "interface" / "api" / "routes" / "reports.py").read_text()
     assert "websocket_connections" in migration
     assert "NotificationWebSocketApi" in template
     assert "$connect" in template and "$disconnect" in template
     assert 'claims.get("type") != "websocket"' in handler
+    assert 'RolePermissionModel.permission_code == "reports.manage"' in realtime
+    assert '"reports.changed"' in realtime
+    assert "publish_reports_changed(session)" in reports
