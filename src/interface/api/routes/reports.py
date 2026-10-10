@@ -90,7 +90,7 @@ async def list_reports(_: Annotated[Principal, Depends(require_permission("repor
         left join user_profiles reporter on reporter.user_id=r.reporter_user_id
         left join user_profiles target on target.user_id=r.target_user_id
         left join works w on w.work_id=r.target_work_id
-        where (:status is null or r.status=:status)
+        where (cast(:status as text) is null or r.status=cast(:status as text))
         order by r.created_at desc, r.report_id desc limit :limit offset :cursor
     """), {"status": status, "limit": limit + 1, "cursor": cursor})).mappings().all()
     return ReportPage(items=[ReportItem(**row) for row in rows[:limit]], next_cursor=cursor + limit if len(rows) > limit else None)
