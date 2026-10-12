@@ -3428,3 +3428,21 @@ Apply migrations/20261012_019_create_search_history.sql and deploy user-system b
 ### Git
 
 Branch: feature/recent-search-history. Commit hash and push outcome reported in handoff; synchronize/rebase, push branch, and authorized fast-forward main merge. Earlier log entries preserved.
+
+## 2026-10-12 - Preserve artist filters in search history
+
+### Request and changes
+
+Save the selected artist with queries such as @Ahmad Ishaq black. Added artist_user_id FK and artist_name snapshot through migration 20261012_020_add_search_history_artist.sql. POST accepts artist_user_id, validates it against active accounts and obtains the canonical profile name. Upserts and responses preserve artist metadata; unscoped searches clear previous metadata. Migration recovers legacy mentions only when exactly one active account matches, preserving ambiguous entries without guessing.
+
+### Verification
+
+Added regression coverage for canonical artist persistence and updated existing upsert expectations. Local backend pytest/mypy unavailable because Python is absent; CI must run them. Frontend regression confirms restored ownerId and black query with a single history POST; 112 frontend tests and production build passed. git diff --check passed.
+
+### Deployment and scope
+
+Run migration and deploy user-system before frontend. No secrets, new permissions, main-system changes or SnapStart initialization effects.
+
+### Git
+
+Branch: fix/search-history-artist-filter. Commit and push results reported in handoff; fetch/rebase before push and authorized fast-forward main merge. Earlier entries preserved.

@@ -21,10 +21,24 @@ async def test_record_normalizes_query_and_serializes_retention() -> None:
     db.execute.return_value = result
     await record_search(SearchRequest(query=" ANIME ART "), actor, cast(AsyncSession, db))
     assert "for update" in str(db.scalar.call_args.args[0])
-    assert db.execute.call_args_list[0].args[1] == {"user_id": actor.user_id, "query": "ANIME ART", "normalized": "anime art"}
+    assert db.execute.call_args_list[0].args[1] == {"user_id": actor.user_id, "query": "ANIME ART", "normalized": "anime art", "artist_id": None, "artist_name": None}
     assert "on conflict" in str(db.execute.call_args_list[0].args[0])
     assert "offset 20" in str(db.execute.call_args_list[1].args[0])
     db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_record_keeps_selected_artist_id_and_canonical_name() -> None:
+    actor = Principal(uuid4(), Role.USER, frozenset())
+    artist_id = uuid4()
+    db = AsyncMock(spec=AsyncSession)
+    db.scalar.side_effect = [actor.user_id, "Ahmad Ishaq"]
+    result = MagicMock()
+    result.mappings.return_value.all.return_value = []
+    db.execute.return_value = result
+    await record_search(SearchRequest(query="@Ahmad Ishaq black", artist_user_id=artist_id), actor, cast(AsyncSession, db))
+    assert db.execute.call_args_list[0].args[1]["artist_id"] == artist_id
+    assert db.execute.call_args_list[0].args[1]["artist_name"] == "Ahmad Ishaq"
 
 
 @pytest.mark.asyncio
