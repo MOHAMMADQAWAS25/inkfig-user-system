@@ -3406,3 +3406,25 @@ Companion frontend has separate reason lists, user default impersonation, locali
 ### Deployment
 
 Deploy user-system before frontend through existing main workflows. Main-system needs no deployment. Legacy records are preserved; no production reports were submitted during verification.
+
+## 2026-10-12 - User recent search history
+
+### Request and changes
+
+Implement the approved per-user recent search table and authenticated API. Added search_history with trimmed display query, case-insensitive normalized query, timestamp, account FK/cascade, unique user/query constraint, ordered index and service-role-only RLS access. GET returns at most 20 records. POST upserts and refreshes timestamps, then removes entries beyond 20. DELETE supports one owned record or all owned records. All endpoints derive identity from the existing profile.read_own authentication dependency; active-account checks and row locks serialize account mutations and retention. No user ID is accepted from the caller.
+
+### Repositories and API
+
+User-system and user-FE on matching feature branches; main-system unchanged. Endpoints: GET/POST/DELETE /api/v1/search-history and DELETE /api/v1/search-history/{entry_id}. No module-level network calls or new SnapStart state.
+
+### Verification
+
+Added async regression tests for trimming, upsert, transaction locking, retention, empty rejection and owner-scoped deletion. Local python -m pytest and python -m mypy src tests could not execute because Python is not installed. GitHub Actions must execute backend verification before deployment. git diff --check passed. Frontend suite has 111 passing tests and production build passes; no production data accessed during testing.
+
+### Deployment
+
+Apply migrations/20261012_019_create_search_history.sql and deploy user-system before user-FE. No new secrets, environment variables or permissions required.
+
+### Git
+
+Branch: feature/recent-search-history. Commit hash and push outcome reported in handoff; synchronize/rebase, push branch, and authorized fast-forward main merge. Earlier log entries preserved.
