@@ -1,3 +1,4 @@
+import re
 from datetime import date
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
@@ -8,11 +9,35 @@ from src.entities.enums.gender import Gender
 
 class ProfileSettingsResponse(BaseModel):
     email: str
+    backup_email: str | None = None
     full_name: str
     phone_number: str
     gender: Gender
     date_of_birth: date
     is_active: bool
+
+
+class UpdateBackupEmailRequest(BaseModel):
+    backup_email: str | None = Field(default=None, max_length=254)
+    backup_email_confirmation: str | None = Field(max_length=254)
+    current_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("backup_email", "backup_email_confirmation")
+    @classmethod
+    def normalize_backup_email(cls, value: str | None) -> str | None:
+        normalized = (value or "").strip().lower()
+        if not normalized:
+            return None
+        if not re.fullmatch(r"[a-z0-9][a-z0-9.]{0,63}@gmail\.com", normalized):
+            raise ValueError("Enter a personal @gmail.com address.")
+        return normalized
+
+    @field_validator("backup_email_confirmation")
+    @classmethod
+    def emails_match(cls, value: str | None, info: ValidationInfo) -> str | None:
+        if value != info.data.get("backup_email"):
+            raise ValueError("Backup email entries must match.")
+        return value
 
 
 class UpdateProfileSettingsRequest(BaseModel):

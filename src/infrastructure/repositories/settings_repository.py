@@ -9,7 +9,7 @@ from src.entities.dto.settings import ProfileSettingsResponse, UpdateProfileSett
 from src.entities.exceptions.settings import PhoneNumberAlreadyExistsError, ProfileNotFoundError
 from src.entities.enums.gender import Gender
 from src.entities.enums.account_status import AccountStatus
-from src.infrastructure.db.postgres.models.user_profile import RefreshTokenModel, UserAccountModel, UserProfileModel
+from src.infrastructure.db.postgres.models.user_profile import PasswordResetCodeModel, RefreshTokenModel, UserAccountModel, UserProfileModel
 
 
 class SqlAlchemySettingsRepository:
@@ -18,15 +18,15 @@ class SqlAlchemySettingsRepository:
 
     async def get_profile(self, user_id: UUID) -> ProfileSettingsResponse | None:
         row = (await self._session.execute(
-            select(UserProfileModel, UserAccountModel.is_active)
+            select(UserProfileModel, UserAccountModel.is_active, UserAccountModel.backup_email)
             .join(UserAccountModel, UserAccountModel.user_id == UserProfileModel.user_id)
             .where(UserProfileModel.user_id == user_id)
         )).first()
-        return None if row is None else self._to_response(row[0], row[1])
+        return None if row is None else self._to_response(row[0], row[1], row[2])
 
     async def get_password_hash(self, user_id: UUID) -> str | None:
         return (await self._session.execute(
-            select(UserAccountModel.password_hash).where(UserAccountModel.user_id == user_id)
+            select(UserAccountModel.password_hash).where(UserAccountModel.user_id == user_id).with_for_update()
         )).scalar_one_or_none()
 
     async def update_profile(self, user_id: UUID, request: UpdateProfileSettingsRequest) -> ProfileSettingsResponse:
@@ -58,6 +58,26 @@ class SqlAlchemySettingsRepository:
         )
         await self._invalidate_refresh_tokens(user_id)
 
+    async def update_backup_email(self, user_id: UUID, email: str | None) -> ProfileSettingsResponse:
+        # The service holds the account lock acquired while checking the password.
+        now = datetime.now(timezone.utc)
+        await self._session.execute(
+            update(UserAccountModel).where(UserAccountModel.user_id == user_id)
+            .values(backup_email=email, updated_at=now)
+        )
+        await self._session.execute(
+            update(PasswordResetCodeModel).where(
+                PasswordResetCodeModel.user_id == user_id,
+                PasswordResetCodeModel.consumed_at.is_(None),
+                PasswordResetCodeModel.invalidated_at.is_(None),
+            ).values(invalidated_at=now)
+        )
+        await self._session.commit()
+        profile = await self.get_profile(user_id)
+        if profile is None:
+            raise ProfileNotFoundError
+        return profile
+
     async def set_active(self, user_id: UUID, is_active: bool) -> None:
         await self._session.execute(
             update(UserAccountModel).where(UserAccountModel.user_id == user_id)
@@ -77,8 +97,9 @@ class SqlAlchemySettingsRepository:
         await self._session.commit()
 
     @staticmethod
-    def _to_response(profile: UserProfileModel, is_active: bool) -> ProfileSettingsResponse:
+    def _to_response(profile: UserProfileModel, is_active: bool, backup_email: str | None = None) -> ProfileSettingsResponse:
         return ProfileSettingsResponse(
             email=profile.email, full_name=profile.full_name, phone_number=profile.phone_number,
+            backup_email=backup_email,
             gender=Gender(profile.gender), date_of_birth=profile.date_of_birth, is_active=is_active,
         )

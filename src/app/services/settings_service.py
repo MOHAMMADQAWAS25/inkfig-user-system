@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from src.entities.dto.settings import ChangePasswordRequest, ProfileSettingsResponse, UpdateProfileSettingsRequest
+from src.entities.dto.settings import ChangePasswordRequest, ProfileSettingsResponse, UpdateProfileSettingsRequest, UpdateBackupEmailRequest
 from src.entities.exceptions.settings import CurrentPasswordInvalidError, ProfileNotFoundError
 from src.entities.repositories.registration import PasswordHasher
 from src.entities.repositories.settings import SettingsRepository
@@ -31,3 +31,12 @@ class SettingsService:
         if password_hash is None or not self._password_hasher.verify(current_password, password_hash):
             raise CurrentPasswordInvalidError
         await self._repository.set_active(user_id, False)
+
+    async def update_backup_email(self, user_id: UUID, request: UpdateBackupEmailRequest) -> ProfileSettingsResponse:
+        password_hash = await self._repository.get_password_hash(user_id)
+        if password_hash is None or not self._password_hasher.verify(request.current_password, password_hash):
+            raise CurrentPasswordInvalidError
+        profile = await self.get_profile(user_id)
+        if request.backup_email == profile.email:
+            raise ValueError("Backup email must differ from the primary email.")
+        return await self._repository.update_backup_email(user_id, request.backup_email)

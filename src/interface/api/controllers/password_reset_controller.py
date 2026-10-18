@@ -10,7 +10,7 @@ class PasswordResetController:
         self._service = service
 
     async def request(self, data: PasswordResetRequest) -> PasswordResetRequestResponse:
-        return await self._service.request(data.email)
+        return await self._service.request(data.email, data.destination)
 
     async def verify(self, data: PasswordResetVerifyRequest) -> PasswordResetVerifyResponse:
         return await self._service.verify(data.email, data.code)

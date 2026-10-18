@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from src.entities.dto.authentication import (
     PasswordResetRequestResponse,
@@ -56,10 +57,16 @@ class PasswordResetService:
         self._max_sends_per_hour = max_sends_per_hour
         self._hourly_block_seconds = hourly_block_seconds
 
-    async def request(self, email: str) -> PasswordResetRequestResponse:
+    async def request(self, email: str, destination: Literal["primary", "backup"] | None = None) -> PasswordResetRequestResponse:
         user = await self._authentication_repository.find_user_by_email(email)
         if user is not None and user.account_status == AccountStatus.ADMIN_SUSPENDED:
             raise AccountAdminSuspendedError
+        if user is not None and user.email_verified_at is not None and user.backup_email and destination is None:
+            return PasswordResetRequestResponse(
+                destination_required=True,
+                message="Choose primary or backup email before sending a reset code.",
+                resend_after_seconds=0,
+            )
         rate = await self._reserve_email_send(email)
         response = PasswordResetRequestResponse(
             expires_in_seconds=self._code_ttl_minutes * 60,
@@ -70,14 +77,20 @@ class PasswordResetService:
             return response
         if user is None or user.email_verified_at is None:
             return response
+        delivery_email = user.backup_email if destination == "backup" else user.email
+        if not delivery_email:
+            return response
         code = f"{secrets.randbelow(1_000_000):06d}"
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=self._code_ttl_minutes)
-        await self._reset_repository.create_challenge(
+        created = await self._reset_repository.create_challenge(
             user.user_id, self._hash(f"code:{user.user_id}:{code}"), expires_at,
             self._max_attempts,
+            expected_backup_email=user.backup_email,
         )
+        if not created:
+            return response
         await self._email_gateway.send_password_reset_code(
-            user.email, user.full_name, code, self._code_ttl_minutes
+            delivery_email, user.full_name, code, self._code_ttl_minutes
         )
         return response
 

@@ -8,6 +8,7 @@ from src.entities.dto.settings import (
     ChangePasswordRequest,
     ProfileSettingsResponse,
     UpdateProfileSettingsRequest,
+    UpdateBackupEmailRequest,
 )
 from src.entities.enums.gender import Gender
 from src.entities.exceptions.settings import CurrentPasswordInvalidError
@@ -37,6 +38,9 @@ class SettingsRepositoryStub:
 
     async def set_active(self, user_id: UUID, is_active: bool) -> None:
         self.active = is_active
+
+    async def update_backup_email(self, user_id: UUID, email: str | None) -> ProfileSettingsResponse:
+        return (await self.get_profile(user_id)).model_copy(update={"backup_email": email})
 
 
 def test_profile_update_reuses_registration_validation() -> None:
@@ -68,3 +72,23 @@ async def test_account_deactivation_is_scoped_to_authenticated_user() -> None:
     service = SettingsService(repository, Pbkdf2PasswordHasher())
     await service.deactivate(repository.user_id, "old-password")
     assert repository.active is False
+
+
+def test_backup_email_normalization_matching_and_optional_removal() -> None:
+    request = UpdateBackupEmailRequest(backup_email=" Student@gmail.com ", backup_email_confirmation="student@GMAIL.COM", current_password="old-password")
+    assert request.backup_email == "student@gmail.com"
+    assert UpdateBackupEmailRequest(backup_email=" ", backup_email_confirmation="", current_password="old-password").backup_email is None
+    for address, confirmation in [("student@gmail.com", "another@gmail.com"), ("student@outlook.com", "student@outlook.com"), ("student@gmail.com.evil", "student@gmail.com.evil")]:
+        with pytest.raises(ValueError):
+            UpdateBackupEmailRequest(backup_email=address, backup_email_confirmation=confirmation, current_password="old-password")
+
+
+@pytest.mark.asyncio
+async def test_backup_mutation_requires_current_password_for_save_and_removal() -> None:
+    repository = SettingsRepositoryStub()
+    service = SettingsService(repository, Pbkdf2PasswordHasher())
+    for address in ["student@gmail.com", None]:
+        with pytest.raises(CurrentPasswordInvalidError):
+            await service.update_backup_email(repository.user_id, UpdateBackupEmailRequest(backup_email=address, backup_email_confirmation=address, current_password="wrong-pass"))
+        updated = await service.update_backup_email(repository.user_id, UpdateBackupEmailRequest(backup_email=address, backup_email_confirmation=address, current_password="old-password"))
+        assert updated.backup_email == address

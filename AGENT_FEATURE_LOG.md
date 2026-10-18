@@ -3446,3 +3446,33 @@ Run migration and deploy user-system before frontend. No secrets, new permission
 ### Git
 
 Branch: fix/search-history-artist-filter. Commit and push results reported in handoff; fetch/rebase before push and authorized fast-forward main merge. Earlier entries preserved.
+
+## 2026-10-18 - Optional backup Gmail and reset destination choice
+
+### Request and changes
+
+Added an optional private backup email for receiving password-reset codes, not for sign-in or university verification. Adding/changing/removing requires the current password and matching normalized Gmail entries, but deliberately sends no ownership-verification code as requested. Blank values remove the address. Backup email is never returned by public profile or reset responses.
+
+### Repositories and files
+
+inkfig-user-system: account migration/model, settings DTO/repository/service/route, authenticated-user internal DTO/mapping, password-reset request/response/controller/service/repository protocol and implementation, focused tests and this log. Matching feature/backup-email frontend implements Security settings and destination selection. Main-system unchanged.
+
+### API
+
+GET /settings/profile includes nullable backup_email for the authenticated owner. PUT /settings/backup-email accepts backup_email, backup_email_confirmation and current_password under existing profile.read_own authorization; caller identity comes from the principal. POST /auth/password-reset/request accepts destination primary or backup. For eligible accounts with a saved backup and no destination, returns destination_required=true without creating/sending a code or consuming the send quota. Explicit selection sends only to the server-stored address. No backup preserves existing primary delivery. Both destinations share the existing account-based limiter; code/token validation and suspension restrictions remain backend-enforced.
+
+### Database and security
+
+Migration: 20261018_021_add_backup_email.sql adds nullable constrained user_accounts.backup_email. Existing account RLS/service-role grants remain authoritative; no public grants or profile exposure. Changes invalidate outstanding reset codes/tokens. Account locking and backup-snapshot checks serialize changes against challenge creation, refusing stale destinations. No login identifier, role, session contract, secrets, environment variables or SnapStart import-time state added. Requested public destination discovery necessarily discloses backup availability (not its address); absent/unknown-account send responses remain generic. Unverified addresses can be mistyped or belong to someone else; frontend warns explicitly.
+
+### Verification
+
+109 backend tests passed; mypy passed on 120 files; git diff --check passed. Tests cover Gmail normalization/mismatch/removal, password proof, explicit destination requirement/no-send behavior, saved-recipient delivery, absent backup, suspension and serialized stale-backup rejection. Frontend 234 tests and strict TypeScript/Vite build passed. Found installed Python outside sandbox, created ignored .venv and installed existing requirements; initial attempts before dependency installation completed failed collection, successful full rerun followed. One existing Starlette/AnyIO deprecation warning remains. No live email or production database mutation used for tests.
+
+### Deployment
+
+Run migration 021 through the existing deployment runner and deploy user-system before deploying frontend. University registration verification stays on the university email; only reset delivery gains a choice. Actual production deployment/migration outcome reported separately; no manual database execution here.
+
+### Git
+
+Branch: feature/backup-email in both repositories. Focused commits, fetch/rebase before push and authorized fast-forward main merge/push; hashes, conflicts and push outcomes reported in handoff. Earlier log entries preserved; .venv and generated caches excluded.

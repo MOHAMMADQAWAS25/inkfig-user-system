@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from src.app.services.settings_service import SettingsService
-from src.entities.dto.settings import AccountStatusRequest, ChangePasswordRequest, ProfileSettingsResponse, UpdateProfileSettingsRequest
+from src.entities.dto.settings import AccountStatusRequest, ChangePasswordRequest, ProfileSettingsResponse, UpdateProfileSettingsRequest, UpdateBackupEmailRequest
 from src.entities.exceptions.settings import CurrentPasswordInvalidError, PhoneNumberAlreadyExistsError, ProfileNotFoundError
 from src.interface.dependencies.authorization import Principal, require_permission
 from src.interface.dependencies.settings import get_settings_service
@@ -11,6 +11,22 @@ from src.interface.security.auth_cookies import clear_auth_cookies
 from src.infrastructure.config.settings import Settings, get_settings
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+
+@router.put("/backup-email", response_model=ProfileSettingsResponse)
+async def update_backup_email(
+    request: UpdateBackupEmailRequest,
+    principal: Annotated[Principal, Depends(require_permission("profile.read_own"))],
+    service: Annotated[SettingsService, Depends(get_settings_service)],
+) -> ProfileSettingsResponse:
+    try:
+        return await service.update_backup_email(principal.user_id, request)
+    except CurrentPasswordInvalidError as error:
+        raise HTTPException(400, "The current password is incorrect.") from error
+    except ProfileNotFoundError as error:
+        raise HTTPException(404, "Profile not found.") from error
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
 
 
 @router.get("/profile", response_model=ProfileSettingsResponse)

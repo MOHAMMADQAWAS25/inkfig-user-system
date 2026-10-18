@@ -7,8 +7,9 @@ from src.entities.dto.authentication import PasswordResetChallenge
 
 class PasswordResetRepository(Protocol):
     async def create_challenge(
-        self, user_id: UUID, code_hash: str, expires_at: datetime, max_attempts: int
-    ) -> None: ...
+        self, user_id: UUID, code_hash: str, expires_at: datetime, max_attempts: int,
+        expected_backup_email: str | None = None,
+    ) -> bool: ...
 
     async def get_pending(self, email: str) -> PasswordResetChallenge | None: ...
 

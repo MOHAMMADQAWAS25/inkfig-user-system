@@ -7,11 +7,13 @@ from src.app.services.password_reset_service import PasswordResetService
 from src.entities.dto.authentication import AuthenticatedUser, PasswordResetChallenge
 from src.entities.dto.email_code_rate_limit import EmailCodeRateDecision
 from src.entities.exceptions.authentication import (
+    AccountAdminSuspendedError,
     PasswordResetAttemptsExceededError,
     PasswordResetCodeExpiredError,
     PasswordResetCodeInvalidError,
     PasswordResetTokenInvalidError,
 )
+from src.entities.enums.account_status import AccountStatus
 from src.infrastructure.security.passwords import Pbkdf2PasswordHasher
 
 SECRET = "a-long-test-jwt-secret-with-32-bytes-minimum"
@@ -47,8 +49,9 @@ class FakeResetRepository:
         self.reset_succeeds = True
 
     async def create_challenge(
-        self, user_id: UUID, code_hash: str, expires_at: datetime, max_attempts: int
-    ) -> None:
+        self, user_id: UUID, code_hash: str, expires_at: datetime, max_attempts: int,
+        expected_backup_email: str | None = None,
+    ) -> bool:
         self.challenge = PasswordResetChallenge(
             challenge_id=uuid4(),
             user_id=user_id,
@@ -58,6 +61,7 @@ class FakeResetRepository:
             attempts=0,
             max_attempts=max_attempts,
         )
+        return True
 
     async def get_pending(self, email: str) -> PasswordResetChallenge | None:
         return self.challenge if email == self.email else None
@@ -227,3 +231,55 @@ async def test_password_reset_hourly_lock_is_neutral_and_sends_no_email() -> Non
     assert response.resend_after_seconds == 1800
     assert len(rate_limit.identifier_hash) == 64
     assert email_gateway.messages == []
+
+
+@pytest.mark.asyncio
+async def test_backup_requires_choice_without_creating_or_sending_a_code() -> None:
+    user = make_user().model_copy(update={"backup_email": "student@gmail.com"})
+    repository = FakeResetRepository(user.email)
+    gateway = FakeEmailGateway()
+    limiter = FakeRateLimitRepository(EmailCodeRateDecision(allowed=True, retry_after_seconds=60))
+    service = PasswordResetService(FakeAuthenticationRepository(user), repository, gateway,
+                                   Pbkdf2PasswordHasher(), SECRET, rate_limit_repository=limiter)
+    response = await service.request(user.email)
+    assert response.destination_required is True
+    assert "student@gmail.com" not in response.model_dump_json()
+    assert repository.challenge is None
+    assert gateway.messages == []
+    assert limiter.identifier_hash == ""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("destination", ["primary", "backup"])
+async def test_explicit_destination_uses_saved_address_and_same_account_limiter(destination: str) -> None:
+    from typing import Literal, cast
+
+    user = make_user().model_copy(update={"backup_email": "student@gmail.com"})
+    repository = FakeResetRepository(user.email)
+    gateway = FakeEmailGateway()
+    service = PasswordResetService(FakeAuthenticationRepository(user), repository, gateway,
+                                   Pbkdf2PasswordHasher(), SECRET)
+    response = await service.request(user.email, cast(Literal["primary", "backup"], destination))
+    assert not response.destination_required
+    assert gateway.messages[0][0] == (user.email if destination == "primary" else user.backup_email)
+    assert repository.challenge and repository.challenge.email == user.email
+
+
+@pytest.mark.asyncio
+async def test_missing_backup_cannot_send_to_an_arbitrary_address() -> None:
+    service, repository, gateway = make_service()
+    await service.request(repository.email, "backup")
+    assert gateway.messages == []
+    assert repository.challenge is None
+
+
+@pytest.mark.asyncio
+async def test_suspension_blocks_both_reset_destinations() -> None:
+    user = make_user().model_copy(update={"backup_email": "student@gmail.com", "account_status": AccountStatus.ADMIN_SUSPENDED})
+    repository = FakeResetRepository(user.email)
+    gateway = FakeEmailGateway()
+    service = PasswordResetService(FakeAuthenticationRepository(user), repository, gateway,
+                                   Pbkdf2PasswordHasher(), SECRET)
+    with pytest.raises(AccountAdminSuspendedError):
+        await service.request(user.email, "backup")
+    assert not gateway.messages

@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
@@ -29,6 +30,7 @@ class LoginRequest(BaseModel):
 class AuthenticatedUser(BaseModel):
     user_id: UUID
     email: str
+    backup_email: str | None = None
     full_name: str
     password_hash: str
     is_active: bool
@@ -70,6 +72,7 @@ class LogoutRequest(RefreshTokenRequest):
 
 class PasswordResetRequest(BaseModel):
     email: str = Field(min_length=1, max_length=254)
+    destination: Literal["primary", "backup"] | None = None
 
     @field_validator("email")
     @classmethod
@@ -78,6 +81,7 @@ class PasswordResetRequest(BaseModel):
 
 
 class PasswordResetRequestResponse(BaseModel):
+    destination_required: bool = False
     message: str = "If the account exists, a reset code has been sent."
     expires_in_seconds: int = 600
     resend_after_seconds: int = 60

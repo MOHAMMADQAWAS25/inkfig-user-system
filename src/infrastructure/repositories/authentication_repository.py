@@ -94,6 +94,7 @@ class SqlAlchemyAuthenticationRepository:
         return AuthenticatedUser(
             user_id=account.user_id,
             email=account.email,
+            backup_email=account.backup_email,
             full_name=full_name,
             password_hash=account.password_hash,
             is_active=account.is_active,

@@ -17,8 +17,16 @@ class SqlAlchemyPasswordResetRepository:
         self._session = session
 
     async def create_challenge(
-        self, user_id: UUID, code_hash: str, expires_at: datetime, max_attempts: int
-    ) -> None:
+        self, user_id: UUID, code_hash: str, expires_at: datetime, max_attempts: int,
+        expected_backup_email: str | None = None,
+    ) -> bool:
+        account = await self._session.scalar(
+            select(UserAccountModel).where(UserAccountModel.user_id == user_id).with_for_update()
+        )
+        if (account is None or account.account_status == "admin_suspended"
+                or account.email_verified_at is None or account.backup_email != expected_backup_email):
+            await self._session.rollback()
+            return False
         now = datetime.now(expires_at.tzinfo)
         await self._session.execute(
             update(PasswordResetCodeModel)
@@ -36,6 +44,7 @@ class SqlAlchemyPasswordResetRepository:
             )
         )
         await self._session.commit()
+        return True
 
     async def get_pending(self, email: str) -> PasswordResetChallenge | None:
         statement = (
@@ -43,6 +52,8 @@ class SqlAlchemyPasswordResetRepository:
             .join(UserAccountModel, UserAccountModel.user_id == PasswordResetCodeModel.user_id)
             .where(
                 UserAccountModel.email == email,
+                UserAccountModel.account_status != "admin_suspended",
+                UserAccountModel.email_verified_at.is_not(None),
                 PasswordResetCodeModel.consumed_at.is_(None),
                 PasswordResetCodeModel.invalidated_at.is_(None),
                 PasswordResetCodeModel.verified_at.is_(None),
