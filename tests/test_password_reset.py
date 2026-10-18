@@ -29,7 +29,7 @@ class FakeAuthenticationRepository:
     async def reactivate_self_deactivated(self, user_id: UUID) -> AuthenticatedUser:
         raise NotImplementedError
 
-    async def store_refresh_token(self, *args: object) -> None:
+    async def store_refresh_token(self, *args: object, record_login: bool = False) -> bool:
         raise NotImplementedError
 
     async def consume_refresh_token(self, *args: object) -> AuthenticatedUser | None:

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -33,8 +33,21 @@ class SqlAlchemyAuthenticationRepository:
         return self._to_user(row[0], row[1], row[2], permissions)
 
     async def store_refresh_token(
-        self, token_id: UUID, user_id: UUID, token_hash: str, expires_at: datetime
-    ) -> None:
+        self, token_id: UUID, user_id: UUID, token_hash: str, expires_at: datetime,
+        *, record_login: bool = False,
+    ) -> bool:
+        show_prompt = False
+        if record_login:
+            account = await self._session.scalar(
+                select(UserAccountModel).where(UserAccountModel.user_id == user_id).with_for_update()
+            )
+            if account is not None and account.first_login_at is None:
+                # Also cover sessions issued by an old instance during rolling deployment.
+                previous_session = await self._session.scalar(
+                    select(RefreshTokenModel.token_id).where(RefreshTokenModel.user_id == user_id).limit(1)
+                )
+                account.first_login_at = datetime.now(timezone.utc)
+                show_prompt = previous_session is None and not account.backup_email
         self._session.add(
             RefreshTokenModel(
                 token_id=token_id,
@@ -44,6 +57,7 @@ class SqlAlchemyAuthenticationRepository:
             )
         )
         await self._session.commit()
+        return show_prompt
 
     async def reactivate_self_deactivated(self, user_id: UUID) -> AuthenticatedUser:
         await self._session.execute(update(UserAccountModel).where(UserAccountModel.user_id == user_id, UserAccountModel.account_status == AccountStatus.SELF_DEACTIVATED.value).values(is_active=True, account_status=AccountStatus.ACTIVE.value, token_version=UserAccountModel.token_version + 1))

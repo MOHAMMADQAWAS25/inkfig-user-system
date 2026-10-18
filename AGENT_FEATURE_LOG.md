@@ -3476,3 +3476,25 @@ Run migration 021 through the existing deployment runner and deploy user-system 
 ### Git
 
 Branch: feature/backup-email in both repositories. Focused commits, fetch/rebase before push and authorized fast-forward main merge/push; hashes, conflicts and push outcomes reported in handoff. Earlier log entries preserved; .venv and generated caches excluded.
+
+## 2026-10-18 - First-login-only backup email reminder eligibility
+
+### Request and changes
+
+Track the first successful sign-in persistently and return show_backup_email_prompt only for that sign-in when no backup email is saved. Claiming the first login and inserting its refresh session share an account row lock and one commit, preventing simultaneous logins from both claiming the prompt. Failed authentication never records a first login. Automatic refresh never returns the prompt. Removing a backup later does not reset eligibility.
+
+### Repositories, API and database
+
+inkfig-user-system: authentication repository/protocol/service, account model, token/session DTOs, cookie-session response mapping, tests and this log. Matching frontend branch consumes the transient flag. Migration 20261018_022_track_first_login.sql adds nullable first_login_at and backfills prior sign-ins from every retained refresh session, including expired/revoked ones. Existing accounts without any retained history remain eligible; previously deleted history cannot be reconstructed. Runtime also checks prior sessions for old instances signing in during rolling deployment. POST /auth/login adds a boolean session-response field; refresh returns false. No public timestamps, new permissions, environment variables, credentials or SnapStart initialization effects.
+
+### Verification
+
+115 pytest tests passed; mypy passed on 121 files; git diff --check passed. New tests cover failed/first/repeated sign-in, refresh suppression, existing-backup suppression after removal, account locking, retained-session detection and migration history scope. Initial test cross-import caused duplicate mypy module names; service tests moved into the existing authentication test module and full checks rerun successfully. Frontend 252 tests and strict TypeScript/Vite build passed. Existing AnyIO/Starlette deprecation warning remains. No real user login or production data was used for tests.
+
+### Deployment
+
+Run migration 022 through the existing workflow and deploy user-system before frontend. Deployment outcome reported in handoff. The one-time flag is consumed at the first successful session issuance, not delayed until a later sign-in if the user leaves before seeing the reminder.
+
+### Git
+
+Matching branch: feature/first-login-backup-reminder. Focused commit, fetch/rebase before branch push and authorized fast-forward main merge/push. Hashes, conflicts and outcomes reported in handoff; previous entries preserved.

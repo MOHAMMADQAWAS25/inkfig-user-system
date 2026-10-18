@@ -42,6 +42,7 @@ class AuthenticatedUser(BaseModel):
 
 
 class TokenResponse(BaseModel):
+    show_backup_email_prompt: bool = False
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
@@ -54,6 +55,7 @@ class TokenResponse(BaseModel):
 
 
 class SessionResponse(BaseModel):
+    show_backup_email_prompt: bool = False
     expires_in: int
     user_id: UUID
     email: str

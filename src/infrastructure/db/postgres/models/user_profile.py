@@ -88,6 +88,7 @@ class UserAccountModel(Base):
     user_id: Mapped[UUID] = mapped_column(PostgresUUID(as_uuid=True), primary_key=True)
     email: Mapped[str] = mapped_column(String(254), nullable=False, unique=True)
     backup_email: Mapped[str | None] = mapped_column(String(254))
+    first_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     account_status: Mapped[str] = mapped_column(

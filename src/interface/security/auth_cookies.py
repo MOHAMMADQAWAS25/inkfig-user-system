@@ -39,6 +39,7 @@ def clear_auth_cookies(response: Response, settings: Settings) -> None:
 
 def session_response(tokens: TokenResponse) -> SessionResponse:
     return SessionResponse(
+        show_backup_email_prompt=tokens.show_backup_email_prompt,
         expires_in=tokens.expires_in,
         user_id=tokens.user_id,
         email=tokens.email,

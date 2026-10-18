@@ -27,14 +27,20 @@ class FakeAuthenticationRepository:
     def __init__(self, user: AuthenticatedUser | None) -> None:
         self.user = user
         self.tokens: dict[str, tuple[UUID, datetime]] = {}
+        self.has_logged_in = False
 
     async def find_user_by_email(self, email: str) -> AuthenticatedUser | None:
         return self.user if self.user and self.user.email == email else None
 
     async def store_refresh_token(
-        self, token_id: UUID, user_id: UUID, token_hash: str, expires_at: datetime
-    ) -> None:
+        self, token_id: UUID, user_id: UUID, token_hash: str, expires_at: datetime,
+        *, record_login: bool = False,
+    ) -> bool:
+        show_prompt = bool(record_login and not self.has_logged_in and self.user and not self.user.backup_email)
+        if record_login:
+            self.has_logged_in = True
         self.tokens[token_hash] = (user_id, expires_at)
+        return show_prompt
 
     async def reactivate_self_deactivated(self, user_id: UUID) -> AuthenticatedUser:
         assert self.user is not None and self.user.user_id == user_id
@@ -170,3 +176,27 @@ async def test_refresh_token_is_rotated_and_cannot_be_reused() -> None:
     assert second.refresh_token != first.refresh_token
     with pytest.raises(InvalidRefreshTokenError):
         await service.refresh(first.refresh_token)
+
+
+@pytest.mark.asyncio
+async def test_only_first_successful_login_can_prompt_and_refresh_never_prompts() -> None:
+    user = make_user()
+    repository = FakeAuthenticationRepository(user)
+    service = make_service(repository)
+    with pytest.raises(InvalidCredentialsError):
+        await service.login(user.email, "wrong-password")
+    assert not repository.has_logged_in
+    first = await service.login(user.email, "correct-password")
+    assert first.show_backup_email_prompt is True
+    assert (await service.refresh(first.refresh_token)).show_backup_email_prompt is False
+    assert (await service.login(user.email, "correct-password")).show_backup_email_prompt is False
+
+
+@pytest.mark.asyncio
+async def test_existing_backup_suppresses_prompt_permanently_even_after_removal() -> None:
+    user = make_user().model_copy(update={"backup_email": "student@gmail.com"})
+    repository = FakeAuthenticationRepository(user)
+    service = make_service(repository)
+    assert (await service.login(user.email, "correct-password")).show_backup_email_prompt is False
+    repository.user = user.model_copy(update={"backup_email": None})
+    assert (await service.login(user.email, "correct-password")).show_backup_email_prompt is False

@@ -10,8 +10,9 @@ class AuthenticationRepository(Protocol):
     async def reactivate_self_deactivated(self, user_id: UUID) -> AuthenticatedUser: ...
 
     async def store_refresh_token(
-        self, token_id: UUID, user_id: UUID, token_hash: str, expires_at: datetime
-    ) -> None: ...
+        self, token_id: UUID, user_id: UUID, token_hash: str, expires_at: datetime,
+        *, record_login: bool = False,
+    ) -> bool: ...
 
     async def consume_refresh_token(
         self, token_hash: str, consumed_at: datetime

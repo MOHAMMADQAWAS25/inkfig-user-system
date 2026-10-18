@@ -45,7 +45,7 @@ class AuthenticationService:
         if user.account_status == AccountStatus.SELF_DEACTIVATED:
             user = await self._repository.reactivate_self_deactivated(user.user_id)
         self._ensure_active(user)
-        return await self._issue_session(user)
+        return await self._issue_session(user, record_login=True)
 
     async def refresh(self, refresh_token: str) -> TokenResponse:
         now = datetime.now(timezone.utc)
@@ -62,7 +62,7 @@ class AuthenticationService:
             self._hash_refresh_token(refresh_token), datetime.now(timezone.utc)
         )
 
-    async def _issue_session(self, user: AuthenticatedUser) -> TokenResponse:
+    async def _issue_session(self, user: AuthenticatedUser, *, record_login: bool = False) -> TokenResponse:
         now = datetime.now(timezone.utc)
         expires_at = now + timedelta(minutes=self._access_token_minutes)
         access_token = jwt.encode(
@@ -81,13 +81,15 @@ class AuthenticationService:
             algorithm="HS256",
         )
         refresh_token = secrets.token_urlsafe(48)
-        await self._repository.store_refresh_token(
+        show_backup_prompt = await self._repository.store_refresh_token(
             uuid4(),
             user.user_id,
             self._hash_refresh_token(refresh_token),
             now + timedelta(days=self._refresh_token_days),
+            record_login=record_login,
         )
         return TokenResponse(
+            show_backup_email_prompt=show_backup_prompt,
             access_token=access_token,
             refresh_token=refresh_token,
             expires_in=self._access_token_minutes * 60,
