@@ -3498,3 +3498,27 @@ Run migration 022 through the existing workflow and deploy user-system before fr
 ### Git
 
 Matching branch: feature/first-login-backup-reminder. Focused commit, fetch/rebase before branch push and authorized fast-forward main merge/push. Hashes, conflicts and outcomes reported in handoff; previous entries preserved.
+
+## 2026-10-19 - Exhibition decision notifications and count-only bell refresh
+
+### Request and scope
+
+Persist student approval/rejection/withdrawal decisions as notifications; fetch full notification lists only when open, while the bell uses a summary. User-system owns notification schema/read APIs, main-system owns exhibition decisions, frontend owns listeners/counters. No saved manager notifications for incoming requests.
+
+### Changes and files
+
+- migrations/20261019_023_exhibition_notifications.sql adds exhibition/submission IDs, exhibition-name/reason snapshots and decision dedupe key. Expands event types while preserving the named social upsert constraint and historical rows. Deleted exhibitions null the reference; removed memberships do not remove decision notifications.
+- src/interface/api/routes/notifications.py adds authenticated GET /notifications/unread-count, recipient-scoped metadata in existing GET /notifications, and best-effort WebSocket refresh after marking read for other connected tabs.
+- tests/test_notification_counts.py verifies summary-only queries and migration contracts. This log records the work.
+
+### API, database and permissions
+
+Additive unread-count endpoint and optional notification response fields. Migration: 20261019_023_exhibition_notifications.sql; requires existing main-system exhibition tables (migration 013 already deployed). Existing profile.read_own gates and recipient filters remain authoritative. No new permissions, public grants, secrets or environment settings. Request-time clients remain SnapStart-compatible.
+
+### Verification
+
+117 pytest tests passed; mypy src/tests passed on 122 files; targeted Ruff and git diff --check passed. One existing upstream TestClient deprecation warning remains. Local .env has a blank numeric email template setting; tests used process-only BREVO_VERIFY_EMAIL_TEMPLATE_ID=0 without editing secrets. PostgreSQL transaction verified new schema/constraint compatibility then rolled back. A second rolled-back workflow verified actual decision notifications, retry deduplication, counters, approved-withdrawal notification retention and social upserts; no WebSocket delivery or fixture records retained.
+
+### Frontend and deployment
+
+Frontend fetches counts on feed pages; opens/refreshes/paginates the full list only while its panel is open, and defers hidden-tab work. Student bell gets unread decisions; admin trophy/review controls get main-system pending counts, not notification rows. Deploy user-system migration/API first, then main-system, then frontend through main workflows. All three repos synchronized before work; commit independently and rebase main immediately before each push. No end-user decision requests sent in production verification.

@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta, timezone
+import logging
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
@@ -10,6 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.infrastructure.config.settings import Settings, get_settings
 from src.infrastructure.db.postgres.session import get_database_session
+from src.infrastructure.integrations.notification_realtime import (
+    publish_notifications_changed,
+)
 from src.interface.dependencies.authorization import Principal, require_permission
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -25,6 +29,10 @@ class NotificationItem(BaseModel):
     work_title: str | None
     created_at: datetime
     read: bool
+    exhibition_id: UUID | None = None
+    submission_id: UUID | None = None
+    exhibition_name: str | None = None
+    decision_reason: str | None = None
 
 
 class NotificationFeed(BaseModel):
@@ -39,6 +47,21 @@ class WebSocketTicket(BaseModel):
     expires_in: int
 
 
+class UnreadCount(BaseModel):
+    unread_count: int
+
+
+@router.get("/unread-count", response_model=UnreadCount)
+async def unread_count(
+    principal: Annotated[Principal, Depends(require_permission("profile.read_own"))],
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> UnreadCount:
+    count = await session.scalar(text(
+        "select count(*) from notifications where recipient_user_id=:recipient and read_at is null"
+    ), {"recipient": principal.user_id})
+    return UnreadCount(unread_count=int(count or 0))
+
+
 @router.post("/socket-ticket", response_model=WebSocketTicket)
 async def create_websocket_ticket(
     principal: Annotated[Principal, Depends(require_permission("profile.read_own"))],
@@ -46,7 +69,7 @@ async def create_websocket_ticket(
 ) -> WebSocketTicket:
     if not settings.websocket_public_url:
         raise RuntimeError("WebSocket notifications are not configured.")
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     ticket = jwt.encode(
         {
             "sub": str(principal.user_id),
@@ -78,7 +101,8 @@ async def list_notifications(
             text("""
         select n.notification_id, n.event_type, n.actor_user_id,
                coalesce(p.full_name, 'InkFig artist') actor_name,
-               p.avatar_object_path, n.work_id, w.title work_title, n.created_at, n.read_at
+               p.avatar_object_path, n.work_id, w.title work_title, n.created_at, n.read_at,
+               n.exhibition_id,n.submission_id,n.exhibition_name,n.decision_reason
         from notifications n
         left join user_profiles p on p.user_id = n.actor_user_id
         left join works w on w.work_id = n.work_id
@@ -110,6 +134,10 @@ async def list_notifications(
                 work_title=row.work_title,
                 created_at=row.created_at,
                 read=row.read_at is not None,
+                exhibition_id=row.exhibition_id,
+                submission_id=row.submission_id,
+                exhibition_name=row.exhibition_name,
+                decision_reason=row.decision_reason,
             )
             for row in rows[:limit]
         ],
@@ -130,4 +158,9 @@ async def mark_notifications_read(
         {"recipient": principal.user_id},
     )
     await session.commit()
+    try:
+        await publish_notifications_changed(session, principal.user_id)
+    except Exception:
+        await session.rollback()
+        logging.getLogger(__name__).exception("Unread-count live delivery failed; read state remains saved")
     return Response(status_code=204)
