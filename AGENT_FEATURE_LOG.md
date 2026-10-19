@@ -3522,3 +3522,27 @@ Additive unread-count endpoint and optional notification response fields. Migrat
 ### Frontend and deployment
 
 Frontend fetches counts on feed pages; opens/refreshes/paginates the full list only while its panel is open, and defers hidden-tab work. Student bell gets unread decisions; admin trophy/review controls get main-system pending counts, not notification rows. Deploy user-system migration/API first, then main-system, then frontend through main workflows. All three repos synchronized before work; commit independently and rebase main immediately before each push. No end-user decision requests sent in production verification.
+
+## 2026-10-19 - Live pending-report counts and per-reporter restrictions
+
+### Request and repository scope
+
+Show pending reports on the Reports icon and keep counts/open lists current via WebSocket. User clarified that reporting must remain enabled: prevent duplicates and let admins block a specific reporter from submitting further reports. All three clean main repositories pulled/rebased before changes. User-system owns schema, authorization and report operations; main-system unchanged.
+
+### Changes and files
+
+- src/interface/api/routes/reports.py adds manager-only GET /reports/pending-count, owner-only GET /reports/eligibility and manager-only PUT /reports/reporters/{user_id}/restriction. Report lists include reporter restriction/action eligibility. Block/restore writes the reporting flag and latest actor/time, not account suspension or report deletion. Self and administrator-account restrictions are denied. Submission and restriction updates serialize on the reporter account row; create rechecks DB state so existing tokens/open forms cannot bypass a block.
+- Existing subject/reporter unique indexes and 409 duplicate handling retained, including after review. Creation, review and restriction changes publish the existing manager-scoped reports.changed after commit; delivery failure is isolated from saved state. No report notification rows added.
+- migrations/20261019_024_reporter_restrictions.sql adds three default-safe columns to user_accounts. tests/test_report_live_counts.py covers counts, permissions, allowed/blocked submissions, duplicate conflicts, restriction/restore, protected accounts, missing records and post-commit transport failure.
+
+### API, database, permissions and SnapStart
+
+Additive count/eligibility/restriction endpoints and optional-compatible list fields. Migration: 20261019_024_reporter_restrictions.sql. Existing reports.manage/reports.create permissions remain authoritative; restriction metadata appears only in protected moderation responses. Existing accounts default unblocked. No new grants, dependencies, secrets, configuration or import-time clients/clocks; SnapStart-compatible execution-time resources preserved.
+
+### Verification
+
+140 pytest tests passed; mypy passed on 123 files; targeted Ruff and git diff --check passed. Migration applied twice and actual count/list SQL validated inside a fully rolled-back PostgreSQL transaction; no user restrictions or reports retained. Initial local diagnostic used a non-async database URL driver; rerun explicitly selected asyncpg. A duplicated new test block was caught by mypy/Ruff, removed and the full suite rerun. Existing upstream AnyIO/Starlette deprecation warning remains. No live moderation or user report submitted.
+
+### Frontend, deployment and limitations
+
+Companion frontend shows manager desktop/mobile Reports badges, open-only live list refresh, reporting eligibility messaging and Reporter block/restore controls. Deploy this user-system migration/API before frontend through existing main workflows; no main-system deployment. Pull/rebase immediately before each push; exact commits and deployment outcomes in handoff. WebSocket delivery remains best effort with reconnect/open recovery, not a durable event outbox. Audit fields record the latest restriction change, not a complete historical audit trail. Existing report pagination remains offset-based.
