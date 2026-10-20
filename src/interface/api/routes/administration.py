@@ -7,6 +7,7 @@ from src.entities.dto.administration import ChangeRoleRequest, ChangeStatusReque
 from src.infrastructure.db.postgres.session import get_database_session
 from src.infrastructure.repositories.administration_repository import SqlAlchemyAdministrationRepository
 from src.interface.dependencies.authorization import Principal, require_permission
+from src.entities.enums.role import Role
 
 router = APIRouter(prefix="/admin/users", tags=["administration"])
 
@@ -14,9 +15,8 @@ def service(session: Annotated[AsyncSession, Depends(get_database_session)]) -> 
     return AdministrationService(SqlAlchemyAdministrationRepository(session))
 
 @router.get("", response_model=UserAdministrationPage)
-async def list_users(app: Annotated[AdministrationService, Depends(service)], _: Annotated[Principal, Depends(require_permission("users.read"))], limit: int = Query(50, ge=1, le=100), cursor: int = Query(0, ge=0, le=100_000)) -> UserAdministrationPage:
-    items, next_cursor = await app.list_users(limit, cursor)
-    return UserAdministrationPage(items=items, next_cursor=next_cursor)
+async def list_users(app: Annotated[AdministrationService, Depends(service)], _: Annotated[Principal, Depends(require_permission("users.read"))], limit: int = Query(50, ge=1, le=100), cursor: int = Query(0, ge=0, le=100_000), query: str = Query("", max_length=200), role: Role | None = None, is_active: bool | None = None) -> UserAdministrationPage:
+    return await app.list_users(limit, cursor, query, role, is_active)
 
 @router.patch("/{user_id}/role", response_model=UserAdministrationResponse)
 async def change_role(user_id: UUID, request: ChangeRoleRequest, app: Annotated[AdministrationService, Depends(service)], actor: Annotated[Principal, Depends(require_permission("users.role.manage"))]) -> UserAdministrationResponse:

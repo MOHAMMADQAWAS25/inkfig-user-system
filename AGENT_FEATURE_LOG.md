@@ -3546,3 +3546,27 @@ Additive count/eligibility/restriction endpoints and optional-compatible list fi
 ### Frontend, deployment and limitations
 
 Companion frontend shows manager desktop/mobile Reports badges, open-only live list refresh, reporting eligibility messaging and Reporter block/restore controls. Deploy this user-system migration/API before frontend through existing main workflows; no main-system deployment. Pull/rebase immediately before each push; exact commits and deployment outcomes in handoff. WebSocket delivery remains best effort with reconnect/open recovery, not a durable event outbox. Audit fields record the latest restriction change, not a complete historical audit trail. Existing report pagination remains offset-based.
+
+## 2026-10-20 - Server-filtered report and user pagination
+
+### Request and changes
+
+Move filters/sorting off loaded frontend batches and apply them before database pagination; audit other query filters. Reports GET adds validated target_type/reason_code/newest-or-oldest parameters alongside status, applies all before LIMIT/OFFSET and preserves stable date/ID ties. Adds filtered total and all/work/user tab counts scoped by status/reason, not downloaded rows. Legacy sexual_content reports can be queried without changing creation reasons. Existing report mutation, restriction, permissions and live delivery behavior retained.
+
+User directory GET adds bounded trimmed case-insensitive literal name/email query, role and is_active filters. Repository predicates precede existing stable ordering and pagination. LIKE wildcard characters escaped. Adds filtered total and full existing administrable joined-account summary (total/active/administrators), computed in SQL without loading all accounts into the frontend. Existing role/status changes and session invalidation untouched.
+
+### Repositories and files
+
+Clean main pulled and complete log read first. Backend baseline 7262b4c0bc2034cda0d75ae48f501317840972b3; matching fix/server-filtered-pagination branches in user-system and user-FE. Main-system inspected/pulled but unchanged. Files: administration DTO/protocol/service/repository/route, reports route, new tests/test_server_filtered_pagination.py, new docs/server-filtered-pagination.md and this log. Frontend companion removes fetch-all/local query filtering, retains backend exhibition groups, preserves controls and handles stale scopes/page resets.
+
+### API, database, permissions and SnapStart
+
+Additive query parameters/page metadata; default scope/order and limits/cursor bounds retained. reports.manage/users.read required before queries; invalid filter values return422 and unauthenticated/forbidden401/403. All values parameterized; only hardcoded asc/desc choice interpolated. No migration, stored data/backfill, permission, dependency, credential, environment or IAM changes. Request-time dependencies remain SnapStart-compatible. Existing status/date report index supports both order directions; type/reason residual predicates are in SQL before pagination. Exact counts and substring matching can scan rows; monitor real production plans at scale rather than add speculative combination indexes.
+
+### Verification and limitations
+
+149 pytest tests passed; mypy src/tests passed on 124 files and git diff --check passed. Nine new cases execute actual report SQL/administration ORM against isolated SQLite fixtures and test HTTP authorization/validation: combined filters, match beyond initial batch, literal wildcard search, tied timestamps, no duplicate page IDs, both sort directions, correct totals/global summaries and beyond-last/empty results. These are not live PostgreSQL integration checks; DATABASE_URL is not configured locally. No production user/report or storage mutations used for verification. Fixed test Table typing and SQLite numeric-only UUID fixture affinity; complete checks rerun without bypass. Existing Starlette/AnyIO warning remains. Companion frontend 365 tests and strict production build passed.
+
+### Deployment, rollback and Git
+
+Deploy user-system first, frontend second through existing main workflows; no migration/main-system deployment. Branch: fix/server-filtered-pagination. Subject: Filter report and user directories before pagination. Fetch/rebase before branch push, then previously authorized fast-forward main merge/push. Exact commit, push/merge/conflict and deployment outcomes reported in handoff. docs/server-filtered-pagination.md records baselines and frontend-first revert order. Revert only ticket commits, never reset/force-push or remove old log entries. Existing offset pages can shift under concurrent changes; separate aggregate/list reads are not snapshot-consistent. No universal snapshot-pagination redesign is claimed.

@@ -71,6 +71,8 @@ class ReportItem(BaseModel):
 class ReportPage(BaseModel):
     items: list[ReportItem]
     next_cursor: int | None = None
+    total: int = 0
+    type_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class PendingReportCount(BaseModel):
@@ -170,8 +172,28 @@ async def create_report(request: CreateReportRequest, principal: Annotated[Princ
 
 
 @router.get("", response_model=ReportPage)
-async def list_reports(_: Annotated[Principal, Depends(require_permission("reports.manage"))], session: Annotated[AsyncSession, Depends(get_database_session)], status: str | None = Query(default=None, pattern="^(pending|reviewed|dismissed|actioned)$"), limit: int = Query(25, ge=1, le=100), cursor: int = Query(0, ge=0, le=100_000)) -> ReportPage:
-    rows = (await session.execute(text("""
+async def list_reports(
+    _: Annotated[Principal, Depends(require_permission("reports.manage"))],
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+    status: str | None = Query(default=None, pattern="^(pending|reviewed|dismissed|actioned)$"),
+    limit: int = Query(25, ge=1, le=100), cursor: int = Query(0, ge=0, le=100_000),
+    target_type: Literal["work", "user"] | None = None,
+    reason_code: str | None = Query(default=None, pattern="^(harassment|hate_speech|sexual_content|violence|spam|copyright|impersonation|other)$"),
+    sort: Literal["newest", "oldest"] = "newest",
+) -> ReportPage:
+    parameters = {"status": status, "reason": reason_code, "target_type": target_type, "limit": limit + 1, "cursor": cursor}
+    # Tab totals share status/reason scope but not the selected type; never count only a page.
+    counts = (await session.execute(text("""
+        select count(*) as all_count,
+            count(*) filter (where target_type='work') as work_count,
+            count(*) filter (where target_type='user') as user_count
+        from content_reports r
+        where (cast(:status as text) is null or r.status=cast(:status as text))
+          and (cast(:reason as text) is null or r.reason_code=cast(:reason as text))
+    """), {"status": status, "reason": reason_code})).mappings().one()
+    type_counts = {"all": int(counts["all_count"]), "work": int(counts["work_count"]), "user": int(counts["user_count"])}
+    direction = "asc" if sort == "oldest" else "desc"
+    rows = (await session.execute(text(f"""
         select r.*, coalesce(reporter.full_name,'Unknown account') reporter_name,
                coalesce(reporter_account.reporting_blocked,false) reporter_reporting_blocked,
                coalesce(reporter_account.user_id is not null and reporter_role.role_code in ('user','supervisor'),false) reporter_can_be_restricted,
@@ -183,9 +205,11 @@ async def list_reports(_: Annotated[Principal, Depends(require_permission("repor
         left join user_profiles target on target.user_id=r.target_user_id
         left join works w on w.work_id=r.target_work_id
         where (cast(:status as text) is null or r.status=cast(:status as text))
-        order by r.created_at desc, r.report_id desc limit :limit offset :cursor
-    """), {"status": status, "limit": limit + 1, "cursor": cursor})).mappings().all()
-    return ReportPage(items=[ReportItem(**row) for row in rows[:limit]], next_cursor=cursor + limit if len(rows) > limit else None)
+          and (cast(:reason as text) is null or r.reason_code=cast(:reason as text))
+          and (cast(:target_type as text) is null or r.target_type=cast(:target_type as text))
+        order by r.created_at {direction}, r.report_id {direction} limit :limit offset :cursor
+    """), parameters)).mappings().all()
+    return ReportPage(items=[ReportItem(**row) for row in rows[:limit]], next_cursor=cursor + limit if len(rows) > limit else None, total=type_counts[target_type or "all"], type_counts=type_counts)
 
 
 @router.patch("/{report_id}", status_code=204)

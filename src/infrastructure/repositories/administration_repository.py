@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 from uuid import UUID
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.sql import Select
 from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.entities.dto.administration import UserAdministrationResponse
+from src.entities.dto.administration import UserAdministrationResponse, UserAdministrationSummary
 from src.entities.enums.role import Role
 from src.entities.enums.account_status import AccountStatus
 from src.infrastructure.db.postgres.models.user_profile import RefreshTokenModel, UserAccountModel, UserProfileModel, UserRoleModel
@@ -16,9 +16,32 @@ class SqlAlchemyAdministrationRepository:
     def _statement(self) -> Select[Any]:
         return select(UserAccountModel, UserProfileModel.full_name, UserRoleModel.role_code).join(UserProfileModel, UserProfileModel.user_id == UserAccountModel.user_id).join(UserRoleModel, UserRoleModel.user_id == UserAccountModel.user_id)
 
-    async def list_users(self, limit: int, offset: int) -> list[UserAdministrationResponse]:
-        rows = (await self._session.execute(self._statement().order_by(UserAccountModel.created_at.desc(), UserAccountModel.user_id).limit(limit).offset(offset))).all()
+    def _filtered(self, query: str, role: Role | None, is_active: bool | None) -> Select[Any]:
+        statement = self._statement()
+        if query.strip():
+            # Treat % and _ as literal search characters, not SQL LIKE wildcards.
+            statement = statement.where(func.lower(UserProfileModel.full_name + " " + UserAccountModel.email).contains(query.strip().lower(), autoescape=True))
+        if role is not None:
+            statement = statement.where(UserRoleModel.role_code == role.value)
+        if is_active is not None:
+            statement = statement.where(UserAccountModel.is_active.is_(is_active))
+        return statement
+
+    async def list_users(self, limit: int, offset: int, query: str = "", role: Role | None = None, is_active: bool | None = None) -> list[UserAdministrationResponse]:
+        rows = (await self._session.execute(self._filtered(query, role, is_active).order_by(UserAccountModel.created_at.desc(), UserAccountModel.user_id).limit(limit).offset(offset))).all()
         return [self._to_response(*row) for row in rows]
+
+    async def count_users(self, query: str = "", role: Role | None = None, is_active: bool | None = None) -> int:
+        return int(await self._session.scalar(select(func.count()).select_from(self._filtered(query, role, is_active).subquery())) or 0)
+
+    async def summary(self) -> UserAdministrationSummary:
+        accounts = self._statement().with_only_columns(UserAccountModel.user_id, UserAccountModel.is_active, UserRoleModel.role_code).subquery()
+        row = (await self._session.execute(select(
+            func.count().label("total"),
+            func.count().filter(accounts.c.is_active.is_(True)).label("active"),
+            func.count().filter(accounts.c.role_code.in_(["admin", "system_administrator"])).label("administrators"),
+        ).select_from(accounts))).mappings().one()
+        return UserAdministrationSummary(**row)
 
     async def get_user(self, user_id: UUID) -> UserAdministrationResponse | None:
         row = (await self._session.execute(self._statement().where(UserAccountModel.user_id == user_id))).first()
